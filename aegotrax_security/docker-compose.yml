@@ -1,0 +1,18 @@
+services:
+  agentguard-engine:
+    build: .
+    container_name: agentguard-engine
+    ports:
+      - "8000:8000"
+    environment:
+      # Must be 0.0.0.0 inside Docker so Windows/Mac can reach it
+      AGENTGUARD_HOST: "0.0.0.0"
+      AGENTGUARD_PORT: "8000"
+      AGENTGUARD_AUDIT_LOG: "/data/agentguard_audit.log"
+      AGENTGUARD_POLICY_PATH: "/data/policy.yaml"
+      # Optional: set your webhook here for pilot observability
+      # AGENTGUARD_AUDIT_WEBHOOK: "https://your-endpoint.example/audit"
+    volumes:
+      # policy + audit log stay on your machine
+      - ./data:/data
+    restart: unless-stopped
