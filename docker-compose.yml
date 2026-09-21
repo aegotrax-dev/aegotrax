@@ -1,0 +1,20 @@
+services:
+  agentguard-engine:
+    build: .
+    container_name: agentguard-engine
+    ports:
+      # Local sandbox only — do not publish to the internet
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Listen inside the container; host access is localhost-only via ports above
+      AGENTGUARD_HOST: "0.0.0.0"
+      AGENTGUARD_PORT: "8000"
+      AGENTGUARD_AUDIT_LOG: "/data/agentguard_audit.log"
+      AGENTGUARD_POLICY_PATH: "/data/policy.yaml"
+      # Recommended for any shared machine:
+      # AGENTGUARD_API_KEY: "replace-with-long-random-string"
+      # Optional audit stream (public HTTPS only; loopback/private targets rejected):
+      # AGENTGUARD_AUDIT_WEBHOOK: "https://your-endpoint.example/audit"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

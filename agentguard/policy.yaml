@@ -1,0 +1,60 @@
+# Pilot demo policy (heuristics). Tune before any real use.
+# AgentGuard Security Policy (Pilot)
+# Override with AGENTGUARD_POLICY_PATH or place policy.yaml in CWD.
+
+risk_thresholds:
+  block: 40
+  require_approval: 50
+
+trusted_domains:
+  - "@company.com"
+
+trusted_endpoints:
+  - "https://api.internal-analytics.com/log"
+
+sensitive_tools:
+  - "list_users"
+  - "read_document"
+  - "read_db"
+  - "query_customers"
+  - "get_ssn"
+  - "export_records"
+
+dangerous_script_keywords:
+  - "wipe"
+  - "delete"
+  - "rm"
+  - "logs"
+  - "privilege"
+  - "drop table"
+  - "truncate"
+
+sensitive_payload_keywords:
+  read_db:
+    - "customer"
+    - "db_record"
+    - "sql"
+    - "confidential"
+  list_users:
+    - "user_list"
+    - "email_list"
+    - "ssn"
+    - "list_users"
+  read_document:
+    - "doc_content"
+    - "confidential"
+    - "read_document"
+  query_customers:
+    - "customer"
+    - "pii"
+    - "ssn"
+  get_ssn:
+    - "ssn"
+    - "social"
+  export_records:
+    - "export"
+    - "records"
+    - "csv"
+
+always_block_tools: []
+always_require_approval_tools: []
