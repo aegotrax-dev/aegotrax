@@ -4,7 +4,7 @@ on:
   schedule:
     # מורץ אוטומטית כל יום בחצות
     - cron: '0 0 * * *'
-  # מאפשר לך להריץ את זה ידנית בלחיצת כפתור לשם בדיקה
+  # מאפשר הרצה ידנית בלחיצת כפתור
   workflow_dispatch:
 
 jobs:
@@ -15,9 +15,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Fetch and Save Traffic Stats
-        uses: sangraama/github-traffic-stats@v1.1.0
-        env:
-          GH_TOKEN: ${{ secrets.TRAFFIC_ACTION_TOKEN }}
-          REPOSITORY: ${{ github.repository }}
+        uses: jgehrcke/github-repo-stats@v1.4.2
         with:
+          repository: ${{ github.repository }}
+          gh_token: ${{ secrets.TRAFFIC_ACTION_TOKEN }}
           stats_branch: 'traffic'
