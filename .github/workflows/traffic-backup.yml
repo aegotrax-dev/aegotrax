@@ -1,0 +1,23 @@
+name: GitHub Traffic Stats Backup
+
+on:
+  schedule:
+    # מורץ אוטומטית כל יום בחצות
+    - cron: '0 0 * * *'
+  # מאפשר לך להריץ את זה ידנית בלחיצת כפתור לשם בדיקה
+  workflow_dispatch:
+
+jobs:
+  run-backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch and Save Traffic Stats
+        uses: sangraama/github-traffic-stats@v1.1.0
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_ACTION_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        with:
+          stats_branch: 'traffic'
