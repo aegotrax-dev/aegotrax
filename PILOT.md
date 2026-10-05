@@ -239,3 +239,52 @@ If the webhook is down or slow, decisions continue normally (logging is best-eff
 1. Review streamed events (or shared `audit.log`)
 2. 20–30 min sync: blocked events, false positives, missing rules
 3. Update `policy.yaml` together
+
+---
+
+## Schema pinning (MCP hardening)
+
+**Why:** A poisoned MCP tool description can steer the agent *before* your
+tool-call interceptor fires. Schema pinning closes that gap.
+
+**What the pilot does:**
+
+1. At gateway startup, every built-in tool schema is pinned (fingerprint of
+   name + description + parameters).
+2. High-severity drift (description change, param add/remove, unknown tool)
+   is blocked in the gateway before the risk engine is called.
+3. Medium/low drift is forwarded to the engine as `schema_drift` context and
+   raises the risk score.
+
+**When proxying real upstream MCP servers:**
+
+```python
+from agentguard.mcp_gateway import pin_upstream_tool, check_upstream_drift
+
+# On first tools/list from upstream — pin as trusted
+pin_upstream_tool(name, schema)
+
+# On every later tools/list — detect drift
+drift = check_upstream_drift(name, schema)
+if drift and drift.severity == "high":
+    # Do not expose / execute; alert
+    ...
+```
+
+**Pilot checklist addition:**
+
+- [ ] Confirm `schema_status` MCP tool returns the expected pinned set
+- [ ] If using upstream MCP servers, pin schemas on connect and check drift
+  on every tools/list refresh
+
+---
+
+## Hardening checklist (v0.2.3)
+
+- [ ] `AGENTGUARD_API_KEY` set; prefer `AGENTGUARD_REQUIRE_API_KEY=1`
+- [ ] Confirm `AGENTGUARD_SERVER_INTENT_ONLY=true` (default) — register intent via `/session`
+- [ ] Tune `trusted_hosts` / `trusted_domains` in `policy.yaml` (hostname allowlist, not substrings)
+- [ ] Session TTL acceptable (`AGENTGUARD_SESSION_TTL`, default 3600)
+- [ ] Run `python examples/security_hardening_test.py` on the pilot host
+- [ ] Audit log path + redaction reviewed (`AGENTGUARD_AUDIT_REDACT`)
+- [ ] Never bind engine to `0.0.0.0` without API key + network ACL

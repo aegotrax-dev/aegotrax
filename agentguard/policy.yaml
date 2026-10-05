@@ -1,16 +1,22 @@
-# Pilot demo policy (heuristics). Tune before any real use.
-# AgentGuard Security Policy (Pilot)
+# AgentGuard Security Policy (hardened pilot)
 # Override with AGENTGUARD_POLICY_PATH or place policy.yaml in CWD.
 
 risk_thresholds:
-  block: 40
+  block: 70
   require_approval: 50
 
+# Email recipient domains (use @prefix or bare domain; matched exactly / subdomain)
 trusted_domains:
   - "@company.com"
+  - "company.com"
 
+# Full endpoint URLs (legacy) — host is extracted for allowlist checks
 trusted_endpoints:
   - "https://api.internal-analytics.com/log"
+
+# Preferred: bare hostnames for outbound HTTP allowlist (exact or subdomain)
+trusted_hosts:
+  - "api.internal-analytics.com"
 
 sensitive_tools:
   - "list_users"
@@ -20,6 +26,13 @@ sensitive_tools:
   - "get_ssn"
   - "export_records"
 
+outbound_tools:
+  - "http_post"
+  - "send_email"
+  - "http_request"
+  - "webhook"
+  - "email"
+
 dangerous_script_keywords:
   - "wipe"
   - "delete"
@@ -28,6 +41,12 @@ dangerous_script_keywords:
   - "privilege"
   - "drop table"
   - "truncate"
+  - "shred"
+  - "unlink"
+  - "remove"
+  - "format"
+  - "mkfs"
+  - "dd if="
 
 sensitive_payload_keywords:
   read_db:
@@ -35,6 +54,7 @@ sensitive_payload_keywords:
     - "db_record"
     - "sql"
     - "confidential"
+    - "pii"
   list_users:
     - "user_list"
     - "email_list"
@@ -44,6 +64,7 @@ sensitive_payload_keywords:
     - "doc_content"
     - "confidential"
     - "read_document"
+    - "financial"
   query_customers:
     - "customer"
     - "pii"

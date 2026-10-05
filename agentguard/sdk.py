@@ -123,23 +123,33 @@ def set_session_context(
     user_intent: str,
     *,
     agent_id: str = "default-agent",
+    user_id: Optional[str] = None,
     engine_base: Optional[str] = None,
     api_key: Optional[str] = None,
 ) -> dict:
-    """Register / update session intent on the engine (pilot helper)."""
+    """Register / update session intent on the engine (server-side source of truth).
+
+    With AGENTGUARD_SERVER_INTENT_ONLY=true (default), verify calls ignore
+    client-supplied user_intent and use the value registered here.
+    Optional user_id binds the session to a tenant identity.
+    """
     base = engine_base or settings.engine_base
     key = api_key if api_key is not None else settings.api_key
     headers = {}
     if key:
         headers["X-API-Key"] = key
 
+    body = {
+        "session_id": session_id,
+        "user_intent": user_intent,
+        "agent_id": agent_id,
+    }
+    if user_id is not None:
+        body["user_id"] = user_id
+
     resp = requests.post(
         f"{base.rstrip('/')}/session",
-        json={
-            "session_id": session_id,
-            "user_intent": user_intent,
-            "agent_id": agent_id,
-        },
+        json=body,
         headers=headers,
         timeout=settings.engine_timeout,
     )
