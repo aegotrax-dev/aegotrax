@@ -2,20 +2,37 @@
 
 SANDBOX SAFETY: default mode is simulate (no real side effects).
 AGENTGUARD_MODE=forward performs real HTTP and must only be used in an isolated lab.
+
+Schema pinning: tool definitions are pinned at startup. Any later change to a
+tool's name/description/parameters is treated as potential poisoning (drift)
+and is logged; high-severity drift can force BLOCK before execution.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import requests
 from mcp.server.fastmcp import FastMCP
 
 from .config import settings
+from .schema_pinning import (
+    CANONICAL_SCHEMAS,
+    DriftEvent,
+    SchemaRegistry,
+    default_registry,
+)
+
+logger = logging.getLogger("agentguard.mcp_gateway")
 
 mcp = FastMCP("AgentGuard-Gateway")
+
+# Pin all canonical tool schemas at import / startup time.
+_PIN_COUNT = default_registry.pin_canonical()
+logger.info("Schema pinning: %d tools pinned at gateway startup", _PIN_COUNT)
 
 
 def get_current_session_context() -> Dict[str, Any]:
@@ -43,6 +60,8 @@ def get_current_session_context() -> Dict[str, Any]:
 def actually_run_tool(tool_name: str, arguments: Dict[str, Any]) -> str:
     if tool_name == "http_post":
         import os
+        from .security_utils import is_url_blocked
+
         # Double gate: mode=forward alone is not enough; require explicit opt-in.
         if os.getenv("AGENTGUARD_ALLOW_REAL_HTTP", "").lower() not in ("1", "true", "yes", "on"):
             return (
@@ -52,6 +71,15 @@ def actually_run_tool(tool_name: str, arguments: Dict[str, Any]) -> str:
             )
         url = arguments.get("url", "")
         data = arguments.get("data", "")
+
+        # Hard SSRF / IMDS guard — never contact private/link-local/metadata hosts
+        blocked, why = is_url_blocked(str(url))
+        if blocked:
+            return (
+                f"❌ [BLOCKED BY SSRF GUARD] Destination not allowed: {url}\n"
+                f"Reason: {why}"
+            )
+
         try:
             resp = requests.post(url, data=data, timeout=5)
             return (
@@ -76,8 +104,39 @@ def actually_run_tool(tool_name: str, arguments: Dict[str, Any]) -> str:
     return f"[SIMULATED] Tool '{tool_name}' executed with args: {arguments}"
 
 
+def _check_schema_drift(tool_name: str) -> Optional[DriftEvent]:
+    """
+    Verify the tool still matches its pinned schema.
+
+    For the built-in gateway tools we re-check against CANONICAL_SCHEMAS.
+    When proxying upstream MCP servers, call registry.check_drift() with the
+    *observed* tool definition returned by tools/list.
+    """
+    canonical = CANONICAL_SCHEMAS.get(tool_name)
+    if canonical is None:
+        # Unknown tool — treat as high-severity drift so it surfaces
+        return default_registry.check_drift(
+            tool_name,
+            {"name": tool_name, "description": "", "parameters": {}},
+        )
+    return default_registry.check_drift(tool_name, canonical)
+
+
 def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
     ctx = get_current_session_context()
+
+    # --- Schema pinning / drift gate (runs before the risk engine) ---
+    drift = _check_schema_drift(tool_name)
+    if drift is not None and drift.severity == "high":
+        reasons_str = "; ".join(drift.differences)
+        return (
+            f"🚨 [AgentGuard] ACTION BLOCKED — SCHEMA DRIFT\n"
+            f"Tool: {tool_name}\n"
+            f"Severity: {drift.severity}\n"
+            f"Reasons: {reasons_str}\n"
+            f"Pinned fingerprint: {drift.pinned_fingerprint[:16] or '(none)'}…\n"
+            f"Observed fingerprint: {drift.observed_fingerprint[:16]}…"
+        )
 
     payload = {
         "session_id": ctx.get("session_id", "default-mcp-session"),
@@ -87,6 +146,9 @@ def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
         "arguments": arguments,
         "call_chain": ["external_agent", tool_name],
     }
+    # Surface medium/low drift to the engine as extra context (pilot)
+    if drift is not None:
+        payload["schema_drift"] = drift.to_dict()
 
     headers = {}
     if settings.api_key:
@@ -120,12 +182,16 @@ def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
 
     if decision == "REQUIRE_APPROVAL":
         reasons_str = "; ".join(reasons) if reasons else "Manual approval required"
+        # Hard gate: never execute on REQUIRE_APPROVAL. A real approval loop
+        # (webhook wait / human token) is out-of-band; this process will not run the tool.
         return (
-            f"⏸️ [AgentGuard] APPROVAL REQUIRED\n"
+            f"⏸️ [AgentGuard] APPROVAL REQUIRED — ACTION NOT EXECUTED\n"
             f"Tool: {tool_name}\n"
+            f"Arguments: {json.dumps(arguments, ensure_ascii=False)}\n"
             f"Risk Score: {risk_score}/100\n"
             f"Reasons: {reasons_str}\n"
-            f"Action was NOT executed."
+            f"To proceed: obtain human approval out-of-band, then re-issue the call "
+            f"with an approved session or use a break-glass path."
         )
 
     mode = settings.mode
@@ -198,6 +264,53 @@ def read_db(query: str = "") -> str:
 def execute_script(script_name: str = "wipe_logs") -> str:
     """Execute arbitrary script on server."""
     return verify_and_forward("execute_script", {"script_name": script_name})
+
+
+@mcp.tool()
+def schema_status() -> str:
+    """Return pinned tool schemas and any recorded drift events (introspection)."""
+    pinned = default_registry.list_pinned()
+    drifts = default_registry.list_drift_events()
+    return json.dumps(
+        {
+            "pinned_count": len(pinned),
+            "pinned": pinned,
+            "drift_events": drifts,
+        },
+        indent=2,
+        ensure_ascii=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public helpers for callers that proxy upstream MCP servers
+# ---------------------------------------------------------------------------
+
+def pin_upstream_tool(name: str, observed_schema: Dict[str, Any]) -> None:
+    """
+    Pin a tool schema obtained from an upstream MCP server's tools/list.
+
+    Call this once when the upstream connection is established (or when you
+    intentionally accept a new tool). Subsequent tools/list responses should
+    be checked with check_upstream_drift().
+    """
+    default_registry.pin(name, observed_schema, source="upstream")
+
+
+def check_upstream_drift(name: str, observed_schema: Dict[str, Any]) -> Optional[DriftEvent]:
+    """
+    Compare an observed upstream tool definition against the pin.
+
+    Returns a DriftEvent (and records it) if the schema has changed.
+    High-severity drift should be treated as BLOCK before the tool is offered
+    to the agent or executed.
+    """
+    return default_registry.check_drift(name, observed_schema)
+
+
+def get_schema_registry() -> SchemaRegistry:
+    """Access the gateway's schema registry (for tests / advanced integration)."""
+    return default_registry
 
 
 def main():

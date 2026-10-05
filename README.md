@@ -104,10 +104,68 @@ Policy override order: `AGENTGUARD_POLICY_PATH` → `./policy.yaml` → package 
 - Data provenance / multi-hop exfiltration  
 - Intent constraint violations (“summarize only” → outbound)  
 - Dangerous script execution  
+- **Poisoned MCP tool descriptions** (schema pinning + drift detection)
 
 ---
 
+## Schema pinning & drift detection (MCP)
 
+A poisoned tool *description* can steer the agent before the tool-call interceptor
+ever runs. AgentGuard pins tool schemas at registration and flags drift.
+
+**Built-in gateway tools** are pinned automatically from canonical definitions at
+startup. High-severity drift (description change, new/removed parameters, or an
+unknown tool) is blocked *before* the call reaches the risk engine.
+
+**When you proxy upstream MCP servers**, pin schemas once on connect, then check
+every subsequent `tools/list`:
+
+```python
+from agentguard.mcp_gateway import pin_upstream_tool, check_upstream_drift
+
+# After connecting to an upstream MCP server and receiving tools/list:
+for tool in upstream_tools:
+    pin_upstream_tool(tool["name"], tool)          # first time = trusted pin
+
+# On later tools/list responses (or before offering the tool to the agent):
+drift = check_upstream_drift(tool["name"], tool)
+if drift and drift.severity == "high":
+    # Do not expose this tool; log and alert
+    ...
+```
+
+Introspection from the gateway itself:
+
+```text
+schema_status   # MCP tool → JSON of pinned schemas + recorded drift events
+```
+
+See `agentguard/schema_pinning.py` for the full API (`SchemaRegistry`, fingerprints, etc.).
+
+---
+
+## Security hardening (v0.2.3)
+
+| Control | Default | Notes |
+|---------|---------|-------|
+| Server-side intent only | `AGENTGUARD_SERVER_INTENT_ONLY=true` | `/verify` ignores client `user_intent`; use `/session` |
+| API key | optional | Set `AGENTGUARD_API_KEY` + `AGENTGUARD_REQUIRE_API_KEY=1` for shared hosts |
+| Session TTL | 3600s | `AGENTGUARD_SESSION_TTL` (0 = never expire) |
+| Rate limit | 120 / 60s per session | `AGENTGUARD_RATE_LIMIT` / `AGENTGUARD_RATE_WINDOW` |
+| Audit redaction | on | `AGENTGUARD_AUDIT_REDACT` |
+| URL allowlist | hostname parse | no substring `in` bypasses |
+| SSRF/IMDS guard | on | blocks private/link-local/metadata in engine + gateway |
+| Email domain | exact/subdomain | rejects `user@company.com.evil.com` |
+| Intent patterns | broader | `only`, `just summarize`, `do not send`, … |
+| Schema pinning | on | MCP tool definition drift |
+| REQUIRE_APPROVAL | hard non-execute | tool never runs; approval is out-of-band |
+
+Offline checks:
+
+```bash
+python examples/security_hardening_test.py
+python examples/schema_pinning_demo.py
+```
 
 ---
 
