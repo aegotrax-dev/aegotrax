@@ -80,6 +80,9 @@ class Settings:
     # Redact sensitive argument keys in audit log
     audit_redact: bool = _env_bool("AGENTGUARD_AUDIT_REDACT", True)
 
+    # Pending approval TTL (seconds) for REQUIRE_APPROVAL queue
+    approval_ttl_seconds: int = int(_env("AGENTGUARD_APPROVAL_TTL", "1800") or "1800")
+
 
 settings = Settings()
 
