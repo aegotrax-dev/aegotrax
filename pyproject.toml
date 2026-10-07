@@ -33,8 +33,10 @@ agentguard-engine = "agentguard.risk_engine:main"
 agentguard-gateway = "agentguard.mcp_gateway:main"
 
 [project.urls]
-Homepage = "https://github.com/your-org/agentguard"
-Documentation = "https://github.com/your-org/agentguard#readme"
+Homepage = "https://aegotrax.com"
+Repository = "https://github.com/aegotrax-dev/aegotrax"
+Documentation = "https://github.com/aegotrax-dev/aegotrax#readme"
+"Bug Tracker" = "https://github.com/aegotrax-dev/aegotrax/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
