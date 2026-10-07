@@ -165,11 +165,15 @@ def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
         decision = res_data.get("decision", "ALLOW")
         risk_score = res_data.get("risk_score", 0)
         reasons = res_data.get("reasons", [])
+        approval_id = res_data.get("approval_id")
+        approval_token = res_data.get("approval_token")
+        approval_expires_at = res_data.get("approval_expires_at")
     except Exception as e:
         if settings.fail_closed:
             decision, risk_score, reasons = "BLOCK", 100, [f"Gateway Error: {str(e)}"]
         else:
             decision, risk_score, reasons = "ALLOW", 0, [f"Gateway Error (fail-open): {str(e)}"]
+        approval_id = approval_token = approval_expires_at = None
 
     if decision == "BLOCK":
         reasons_str = "; ".join(reasons) if reasons else "High risk detected"
@@ -182,17 +186,29 @@ def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
 
     if decision == "REQUIRE_APPROVAL":
         reasons_str = "; ".join(reasons) if reasons else "Manual approval required"
-        # Hard gate: never execute on REQUIRE_APPROVAL. A real approval loop
-        # (webhook wait / human token) is out-of-band; this process will not run the tool.
-        return (
-            f"⏸️ [AgentGuard] APPROVAL REQUIRED — ACTION NOT EXECUTED\n"
-            f"Tool: {tool_name}\n"
-            f"Arguments: {json.dumps(arguments, ensure_ascii=False)}\n"
-            f"Risk Score: {risk_score}/100\n"
-            f"Reasons: {reasons_str}\n"
-            f"To proceed: obtain human approval out-of-band, then re-issue the call "
-            f"with an approved session or use a break-glass path."
-        )
+        # Hard gate: never execute until human approves via /approval/decide, then
+        # re-submit the same call with approval_id + approval_token.
+        lines = [
+            "⏸️ [AgentGuard] APPROVAL REQUIRED — ACTION NOT EXECUTED",
+            f"Tool: {tool_name}",
+            f"Arguments: {json.dumps(arguments, ensure_ascii=False)}",
+            f"Risk Score: {risk_score}/100",
+            f"Reasons: {reasons_str}",
+        ]
+        if approval_id:
+            lines.append(f"approval_id: {approval_id}")
+            lines.append(f"approval_token: {approval_token}")
+            if approval_expires_at:
+                lines.append(f"approval_expires_at: {approval_expires_at}")
+            lines.append(
+                "Next: POST /approval/decide {approval_id, token, decision:approve|deny} "
+                "then re-call the tool with the same approval_id + approval_token."
+            )
+        else:
+            lines.append(
+                "To proceed: obtain human approval out-of-band, then re-issue the call."
+            )
+        return "\n".join(lines)
 
     mode = settings.mode
 

@@ -14,6 +14,7 @@ import yaml
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from .approval import approval_queue
 from .audit_models import AuditEvent
 from .config import settings, warn_insecure_defaults
 from .security_utils import (
@@ -28,7 +29,7 @@ from .security_utils import (
 
 logger = logging.getLogger("agentguard.risk_engine")
 
-VERSION = "0.2.3"
+VERSION = "0.2.4"
 
 app = FastAPI(
     title="AgentGuard Risk Engine",
@@ -43,6 +44,9 @@ SESSION_META: Dict[str, Dict[str, Any]] = {}
 
 # Simple in-memory rate limiter: session_id → deque of timestamps
 _RATE_BUCKETS: Dict[str, Deque[float]] = defaultdict(deque)
+
+# Align in-memory approval queue TTL with settings
+approval_queue.ttl_seconds = max(60, int(settings.approval_ttl_seconds))
 
 
 def require_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
@@ -68,6 +72,9 @@ class MultiAgentRequest(BaseModel):
     schema_drift: Optional[Dict[str, Any]] = None
     # Optional caller-declared user binding (for multi-tenant isolation)
     user_id: Optional[str] = None
+    # Human-approval resume (from a prior REQUIRE_APPROVAL)
+    approval_id: Optional[str] = None
+    approval_token: Optional[str] = None
 
 
 class SessionUpdate(BaseModel):
@@ -79,6 +86,13 @@ class SessionUpdate(BaseModel):
 
 class SessionReset(BaseModel):
     session_id: str
+
+
+class ApprovalDecide(BaseModel):
+    approval_id: str
+    decision: str  # approve | deny
+    token: str
+    decided_by: str = "human"
 
 
 def _default_policy() -> dict:
@@ -245,6 +259,65 @@ def evaluate(request: MultiAgentRequest) -> dict:
 
     session_data = _touch_session(request.session_id)
     meta = SESSION_META.get(request.session_id)
+
+    # --- Resume path: prior REQUIRE_APPROVAL was human-approved ---
+    if request.approval_id and request.approval_token:
+        err = approval_queue.consume_if_approved(
+            approval_id=request.approval_id,
+            token=request.approval_token,
+            tool=request.tool,
+            arguments=request.arguments or {},
+            session_id=request.session_id,
+        )
+        if err is None:
+            # Single-use approved call — short-circuit to ALLOW with audit
+            user_intent = (meta or {}).get("user_intent") or request.user_intent or ""
+            attack_path = (
+                " -> ".join(request.call_chain + [request.tool])
+                if request.call_chain
+                else request.tool
+            )
+            audit_args = (
+                redact_arguments(request.arguments)
+                if settings.audit_redact
+                else request.arguments
+            )
+            audit_event = AuditEvent(
+                session_id=request.session_id,
+                agent_id=request.agent_id,
+                tool_name=request.tool,
+                arguments=audit_args,
+                user_intent=user_intent,
+                risk_score=0,
+                decision="ALLOW",
+                reasons=[f"Human-approved (approval_id={request.approval_id}, consumed)"],
+                attack_path=attack_path,
+                matched_policies=["human_approval"],
+            )
+            log_audit_event(audit_event)
+            maybe_stream_audit(audit_event)
+            return {
+                "decision": "ALLOW",
+                "risk_score": 0,
+                "reasons": [f"Human-approved (approval_id={request.approval_id})"],
+                "attack_path": attack_path,
+                "matched_policies": ["human_approval"],
+                "session_id": request.session_id,
+                "server_intent": user_intent,
+                "approval_id": request.approval_id,
+                "approval_status": "consumed",
+            }
+        # Token supplied but not valid → BLOCK (do not fall through silently)
+        return {
+            "decision": "BLOCK",
+            "risk_score": 100,
+            "reasons": [f"Approval resume failed: {err}"],
+            "attack_path": request.tool,
+            "matched_policies": ["approval_resume_failed"],
+            "session_id": request.session_id,
+            "approval_id": request.approval_id,
+            "approval_status": "invalid",
+        }
 
     # --- Server-side intent only (critical trust boundary) ---
     if settings.trust_server_intent_only:
@@ -446,6 +519,27 @@ def evaluate(request: MultiAgentRequest) -> dict:
         else request.arguments
     )
 
+    approval_id = None
+    approval_token = None
+    approval_status = None
+    approval_expires_at = None
+
+    if decision == "REQUIRE_APPROVAL":
+        pending = approval_queue.create(
+            session_id=request.session_id,
+            agent_id=request.agent_id,
+            tool=request.tool,
+            arguments=request.arguments or {},
+            risk_score=final_score,
+            reasons=reasons,
+            user_intent=user_intent,
+        )
+        approval_id = pending.approval_id
+        approval_token = pending.token
+        approval_status = pending.status
+        approval_expires_at = pending.expires_at
+        matched.append("approval_queued")
+
     audit_event = AuditEvent(
         session_id=request.session_id,
         agent_id=request.agent_id,
@@ -460,9 +554,23 @@ def evaluate(request: MultiAgentRequest) -> dict:
     )
     log_audit_event(audit_event)
     maybe_stream_audit(audit_event)
-    maybe_notify_approval(audit_event)
 
-    return {
+    if decision == "REQUIRE_APPROVAL":
+        # Enrich webhook payload with approval credentials for human operators
+        try:
+            extra = audit_event.model_dump()
+            extra["approval_id"] = approval_id
+            extra["approval_token"] = approval_token
+            extra["approval_expires_at"] = approval_expires_at
+            webhook = settings.approval_webhook
+            if webhook and _webhook_url_allowed(webhook):
+                requests.post(webhook, json=extra, timeout=2.0)
+        except Exception:
+            pass
+    else:
+        maybe_notify_approval(audit_event)
+
+    result = {
         "decision": decision,
         "risk_score": final_score,
         "reasons": reasons,
@@ -471,6 +579,12 @@ def evaluate(request: MultiAgentRequest) -> dict:
         "session_id": request.session_id,
         "server_intent": user_intent,
     }
+    if approval_id:
+        result["approval_id"] = approval_id
+        result["approval_token"] = approval_token
+        result["approval_status"] = approval_status
+        result["approval_expires_at"] = approval_expires_at
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -491,6 +605,8 @@ def health():
         "require_api_key": settings.require_api_key,
         "server_intent_only": settings.trust_server_intent_only,
         "session_ttl_seconds": settings.session_ttl_seconds,
+        "approval_ttl_seconds": settings.approval_ttl_seconds,
+        "pending_approvals": len(approval_queue.list_pending()),
         "sessions": len(SESSION_PROVENANCE),
     }
 
@@ -565,6 +681,56 @@ def policy_reload(_: None = Depends(require_api_key)):
     )
     log_audit_event(event)
     return {"ok": True, "thresholds": cfg.get("risk_thresholds"), "version": VERSION}
+
+
+
+@app.post("/approval/decide")
+def approval_decide(body: ApprovalDecide, _: None = Depends(require_api_key)):
+    """Approve or deny a pending REQUIRE_APPROVAL item (human / external workflow)."""
+    try:
+        item = approval_queue.decide(
+            body.approval_id,
+            decision=body.decision,
+            token=body.token,
+            decided_by=body.decided_by or "human",
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="approval not found")
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    event = AuditEvent(
+        session_id=item.session_id,
+        agent_id=item.agent_id,
+        tool_name=item.tool,
+        arguments=redact_arguments(item.arguments) if settings.audit_redact else item.arguments,
+        user_intent=item.user_intent,
+        risk_score=item.risk_score,
+        decision=f"APPROVAL_{item.status.upper()}",
+        reasons=[f"Human decision={item.status} by {item.decided_by}"],
+        attack_path=item.tool,
+        matched_policies=["human_approval_decide"],
+    )
+    log_audit_event(event)
+    maybe_stream_audit(event)
+    return {"ok": True, **item.to_public_dict()}
+
+
+@app.get("/approval/{approval_id}")
+def approval_status(approval_id: str, _: None = Depends(require_api_key)):
+    item = approval_queue.get(approval_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="approval not found")
+    data = item.to_public_dict()
+    # never expose token on status GET
+    return data
+
+
+@app.get("/approvals/pending")
+def approvals_pending(session_id: Optional[str] = None, _: None = Depends(require_api_key)):
+    return {"pending": approval_queue.list_pending(session_id=session_id)}
 
 
 def main():

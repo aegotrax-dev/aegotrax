@@ -50,7 +50,7 @@ def verify_tool_call(
     *,
     session_id: str,
     agent_id: str,
-    user_intent: str,
+    user_intent: str = "",
     tool: str,
     arguments: Optional[Dict[str, Any]] = None,
     call_chain: Optional[List[str]] = None,
@@ -58,6 +58,9 @@ def verify_tool_call(
     api_key: Optional[str] = None,
     timeout: Optional[float] = None,
     raise_on_block: bool = False,
+    approval_id: Optional[str] = None,
+    approval_token: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Ask the Risk Engine whether a tool call is allowed.
@@ -82,6 +85,12 @@ def verify_tool_call(
         "arguments": arguments or {},
         "call_chain": call_chain or ["sdk", tool],
     }
+    if approval_id:
+        payload["approval_id"] = approval_id
+    if approval_token:
+        payload["approval_token"] = approval_token
+    if user_id:
+        payload["user_id"] = user_id
 
     headers = {}
     if key:

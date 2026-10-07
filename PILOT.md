@@ -288,3 +288,19 @@ if drift and drift.severity == "high":
 - [ ] Run `python examples/security_hardening_test.py` on the pilot host
 - [ ] Audit log path + redaction reviewed (`AGENTGUARD_AUDIT_REDACT`)
 - [ ] Never bind engine to `0.0.0.0` without API key + network ACL
+
+
+---
+
+## Human approval queue (v0.2.4)
+
+When a call scores in the approval band:
+
+1. Engine returns `decision=REQUIRE_APPROVAL` plus `approval_id` and `approval_token`
+2. Operator (or webhook consumer) calls:
+   `POST /approval/decide` with `{approval_id, token, decision: "approve"|"deny"}`
+3. Client re-issues the **same** tool+arguments with `approval_id` + `approval_token`
+4. Token is **single-use** (consumed on ALLOW)
+
+Env: `AGENTGUARD_APPROVAL_TTL` (default 1800s), `AGENTGUARD_APPROVAL_WEBHOOK`.
+Demo: `python examples/approval_flow_demo.py` (engine must be running).
