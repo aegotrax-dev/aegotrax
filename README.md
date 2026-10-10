@@ -9,18 +9,19 @@ This repo is the open **pilot runtime**. The installable Python package name is 
 
 ---
 
-# 🛡️ AgentGuard v0.2.4 — Hardened Pilot Runtime
+# 🛡️ AgentGuard v0.2.5 — Scoped Intent + Read Budgets
 
-Intercept tool calls, evaluate **server-side intent + data provenance**, and **block or require human approval** before sensitive actions run.
+Intercept tool calls, evaluate **server-side intent + data provenance**, enforce an optional **session scope envelope**, apply **cumulative read budgets**, and **block or require human approval** before sensitive actions run.
 
 | Integration | Use when |
 |-------------|----------|
 | **Python SDK** | You call tools from your own code (`verify_tool_call` / `@protected_tool`) |
 | **MCP Gateway** | The agent already speaks MCP and you want one interception point |
 
-### What’s new in 0.2.4
-- **Human-approval queue** — `REQUIRE_APPROVAL` returns `approval_id` + `approval_token`; approve via `POST /approval/decide`; single-use resume on `/verify`
-- From **0.2.3**: server-side intent only, hostname allowlists, SSRF/IMDS guard, session TTL, rate limit, audit redaction, MCP schema pinning
+### What’s new in 0.2.5
+- **Scoped session intent** — `/session` accepts optional `scope` (`allowed_tools`, `denied_tools`, …); `/verify` becomes a consistency check against that envelope
+- **Cumulative read budgets** — per-session call counts on `sensitive_tools`; exceed → `REQUIRE_APPROVAL` or `BLOCK` (policy)
+- From **0.2.4**: human-approval token queue, server-side intent only, hostname allowlists, SSRF/IMDS, schema pinning, rate limit, audit redaction
 
 ---
 
@@ -36,8 +37,6 @@ source .venv/bin/activate
 
 pip install -U pip
 pip install .
-# optional LangGraph demo deps:
-# pip install ".[demo]"
 ```
 
 **Docker (engine only):**
@@ -47,76 +46,83 @@ docker compose up --build
 # → http://127.0.0.1:8000
 ```
 
-Commands after `pip install .`:
-
 ```bash
 agentguard-engine     # Risk Engine → http://127.0.0.1:8000
 agentguard-gateway    # MCP Gateway (stdio)
-```
-
-Health check:
-
-```bash
 curl -s http://127.0.0.1:8000/health
+# expect "version": "0.2.5"
 ```
-
-Expected: `"version": "0.2.4"`, `"server_intent_only": true`.
 
 ---
 
 ## Quick start (SDK)
 
-With the default `AGENTGUARD_SERVER_INTENT_ONLY=true`, the engine **ignores**
-`user_intent` on each verify call. Register intent once via `/session`
-(`set_session_context`); that is the source of truth.
-
 ```python
-from agentguard import verify_tool_call, set_session_context, protected_tool
+from agentguard import verify_tool_call, set_session_context
 
-# 1) Server-side intent (source of truth)
 set_session_context(
     "sess-42",
     user_intent="Summarize the ticket only",
     agent_id="support-agent",
-    user_id="user-123",  # optional tenant binding
+    scope={
+        "allowed_tools": ["read_document", "list_tickets"],
+        "denied_tools": ["http_post", "send_email"],
+    },
 )
 
-# 2) Before every tool call
 result = verify_tool_call(
     session_id="sess-42",
     agent_id="support-agent",
-    user_intent="",  # ignored when SERVER_INTENT_ONLY=true
     tool="http_post",
-    arguments={"url": "https://evil.example", "data": "customer_db_record"},
+    arguments={"url": "https://evil.example", "data": "x"},
 )
-
-if result["decision"] == "BLOCK":
-    raise PermissionError(result["reasons"])
-
-if result["decision"] == "REQUIRE_APPROVAL":
-    # Tool was NOT executed.
-    # Human: POST /approval/decide {approval_id, token, decision: "approve"}
-    # Then resume once with the same tool + arguments:
-    result = verify_tool_call(
-        session_id="sess-42",
-        agent_id="support-agent",
-        tool="http_post",
-        arguments={"url": "https://evil.example", "data": "customer_db_record"},
-        approval_id=result["approval_id"],
-        approval_token=result["approval_token"],
-    )
-
-# 3) Or decorate real functions
-@protected_tool(
-    session_id_fn=lambda: "sess-42",
-    agent_id_fn=lambda: "support-agent",
-    user_intent_fn=lambda: "",
-)
-def send_email(to: str, body: str):
-    ...
+# → BLOCK (outside session scope)
 ```
 
-More detail for pilot hosts: **[PILOT.md](./PILOT.md)**.
+More detail: **[PILOT.md](./PILOT.md)**.
+
+---
+
+## Scoped session intent (0.2.5)
+
+Register a structured envelope with the intent string:
+
+| Field | Effect |
+|-------|--------|
+| `allowed_tools` | If non-empty, only these tools may run |
+| `denied_tools` | Always blocked for this session |
+| `max_risk_without_approval` | Optional lower bar for `REQUIRE_APPROVAL` |
+| `allowed_hosts` | Reserved for tighter host constraints |
+
+Without `scope`, behaviour matches 0.2.4 (string intent + heuristics only).
+
+```bash
+python examples/scoped_intent_demo.py   # engine must be running
+```
+
+---
+
+## Cumulative read budgets (0.2.5)
+
+Counts calls to `sensitive_tools` per session. Configured in `policy.yaml`:
+
+```yaml
+read_budgets:
+  default_max_calls: 20
+  on_exceed: REQUIRE_APPROVAL  # or BLOCK
+  tools:
+    read_db:
+      max_calls: 10
+    read_document:
+      max_calls: 15
+```
+
+Response includes `read_budget: {tool, count, limit}` when applicable.  
+`/session/reset` and session TTL clear counters.
+
+```bash
+python examples/read_budget_demo.py   # engine must be running
+```
 
 ---
 
@@ -124,28 +130,17 @@ More detail for pilot hosts: **[PILOT.md](./PILOT.md)**.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AGENTGUARD_API_KEY` | — | If set, required as `X-API-Key` on engine APIs |
-| `AGENTGUARD_REQUIRE_API_KEY` | `false` | If `true`, refuse requests when no key is configured |
-| `AGENTGUARD_SERVER_INTENT_ONLY` | `true` | Ignore client `user_intent` on `/verify`; use `/session` only |
-| `AGENTGUARD_SESSION_TTL` | `3600` | Session idle TTL in seconds (`0` = never expire) |
-| `AGENTGUARD_RATE_LIMIT` | `120` | Max `/verify` calls per session per window |
+| `AGENTGUARD_API_KEY` | — | `X-API-Key` for engine APIs |
+| `AGENTGUARD_REQUIRE_API_KEY` | `false` | Refuse requests if no key configured |
+| `AGENTGUARD_SERVER_INTENT_ONLY` | `true` | Ignore client `user_intent` on `/verify` |
+| `AGENTGUARD_SESSION_TTL` | `3600` | Session idle TTL (`0` = never) |
+| `AGENTGUARD_RATE_LIMIT` | `120` | Max `/verify` per session per window |
 | `AGENTGUARD_RATE_WINDOW` | `60` | Rate-limit window (seconds) |
-| `AGENTGUARD_AUDIT_REDACT` | `true` | Redact sensitive keys in audit log arguments |
-| `AGENTGUARD_APPROVAL_WEBHOOK` | — | POST when `REQUIRE_APPROVAL` (payload includes token) |
-| `AGENTGUARD_APPROVAL_TTL` | `1800` | Pending approval lifetime (seconds) |
-| `AGENTGUARD_AUDIT_WEBHOOK` | — | Stream every audit event (best-effort) |
-| `AGENTGUARD_POLICY_PATH` | package policy | Custom `policy.yaml` |
-| `AGENTGUARD_AUDIT_LOG` | `agentguard_audit.log` | Audit file path (do not commit this file) |
-| `AGENTGUARD_MODE` | `simulate` | Gateway: `simulate` / `echo` / `forward` |
+| `AGENTGUARD_AUDIT_REDACT` | `true` | Redact sensitive keys in audit log |
+| `AGENTGUARD_APPROVAL_WEBHOOK` | — | POST on `REQUIRE_APPROVAL` (includes token) |
+| `AGENTGUARD_APPROVAL_TTL` | `1800` | Pending approval lifetime |
 | `AGENTGUARD_FAIL_CLOSED` | `true` | Block when engine unreachable |
-| `AGENTGUARD_HOST` / `PORT` | `127.0.0.1` / `8000` | Engine bind |
-| `AGENTGUARD_ENGINE_URL` | `http://127.0.0.1:8000/verify-multi-agent` | SDK/gateway → engine |
-| `AGENTGUARD_ENGINE_TIMEOUT` | `2.0` | Timeout (seconds) to engine |
-
-Policy override order: `AGENTGUARD_POLICY_PATH` → `./policy.yaml` → package default.
-
-**Shared hosts:** set a strong `AGENTGUARD_API_KEY` and `AGENTGUARD_REQUIRE_API_KEY=1`.  
-Never bind to `0.0.0.0` without both.
+| `AGENTGUARD_MODE` | `simulate` | Gateway: `simulate` / `echo` / `forward` |
 
 ---
 
@@ -153,101 +148,75 @@ Never bind to `0.0.0.0` without both.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/health` | Liveness + hardening flags |
+| GET | `/health` | Liveness + version |
 | POST | `/verify-multi-agent` | Main decision API |
-| POST | `/session` | Set session intent (+ optional `user_id`) |
-| POST | `/session/reset` | Clear session provenance |
-| GET | `/session/{id}` | Inspect session |
-| POST | `/policy/reload` | Reload policy (audited) without restart |
+| POST | `/session` | Set intent (+ optional `scope`, `user_id`) |
+| POST | `/session/reset` | Clear session provenance + budgets |
+| GET | `/session/{id}` | Inspect session (includes `read_counts`) |
+| POST | `/policy/reload` | Reload policy without restart |
 | POST | `/approval/decide` | Approve or deny (`token` required) |
-| GET | `/approval/{id}` | Approval status (token not exposed) |
-| GET | `/approvals/pending` | List pending (optional `?session_id=`) |
+| GET | `/approval/{id}` | Approval status |
+| GET | `/approvals/pending` | List pending |
 
 ---
 
-## Human approval queue (`REQUIRE_APPROVAL`)
+## Human approval queue (0.2.4+)
 
-When a call scores in the approval band (below block, at/above approval threshold):
-
-1. Engine returns `decision=REQUIRE_APPROVAL` plus **`approval_id`** and **`approval_token`**
-2. Operator (or webhook consumer):
-   ```http
-   POST /approval/decide
-   { "approval_id": "...", "token": "...", "decision": "approve" | "deny" }
-   ```
-3. Client re-issues the **same** tool + arguments with `approval_id` + `approval_token`
-4. Token is **single-use** (consumed on ALLOW). Mismatch / reuse → BLOCK
+1. `REQUIRE_APPROVAL` → `approval_id` + `approval_token`
+2. `POST /approval/decide` with `{approval_id, token, decision}`
+3. Re-issue same tool+args with token (single-use)
 
 ```bash
-# engine must be running
 python examples/approval_flow_demo.py
 ```
 
-The queue is **in-memory** (cleared on process restart) — appropriate for pilot, not multi-instance HA.
+Queue is **in-memory** (cleared on restart) — pilot only.
 
 ---
 
 ## Threats covered
 
-- Indirect prompt injection leading to tool abuse
+- Indirect prompt injection → tool abuse
 - Data provenance / multi-hop exfiltration
-- Intent constraint violations (“summarize only” → outbound)
-- Dangerous script execution
-- Poisoned MCP tool descriptions (schema pinning + drift detection)
-- Client spoofing of `user_intent` (server-side intent)
-- Substring allowlist bypasses on URLs / emails
-- SSRF / cloud metadata (IMDS) targets
-- Basic session flooding (rate limit)
-- Unattended mid-risk actions (human approval queue)
+- Intent constraint violations
+- Session scope violations (tool outside envelope)
+- Slow-drip reads inside a valid scope (call budgets)
+- Dangerous script keywords
+- Poisoned MCP tool descriptions (schema pinning)
+- Client spoofing of `user_intent`
+- Substring allowlist bypasses / SSRF / IMDS
+- Session flooding (rate limit)
 
-**Not fully covered yet:** slow exfil *inside* a legitimate read scope with no outbound (many small queries). Per-sensitive-tool volume caps are a planned follow-up.
-
----
-
-## Schema pinning & drift detection (MCP)
-
-A poisoned tool *description* can steer the agent before the tool-call interceptor runs.  
-Schemas are pinned at registration; high-severity drift is blocked before the risk engine.
-
-Upstream MCP proxy pattern:
-
-```python
-from agentguard.mcp_gateway import pin_upstream_tool, check_upstream_drift
-
-for tool in upstream_tools:
-    pin_upstream_tool(tool["name"], tool)
-
-drift = check_upstream_drift(tool["name"], tool)
-if drift and drift.severity == "high":
-    # do not expose / execute
-    ...
-```
-
-MCP introspection tool: `schema_status`.
+**Still limited:** byte-level budgets; multi-instance shared state; full enterprise HA.
 
 ---
 
-## Security hardening (v0.2.4)
+## Security hardening
 
-| Control | Default | Notes |
-|---------|---------|-------|
-| Server-side intent only | `AGENTGUARD_SERVER_INTENT_ONLY=true` | `/verify` ignores client `user_intent` |
-| API key | optional | Use `REQUIRE_API_KEY=1` on shared hosts |
-| Session TTL | 3600s | `AGENTGUARD_SESSION_TTL` |
-| Rate limit | 120 / 60s per session | configurable |
-| Audit redaction | on | `AGENTGUARD_AUDIT_REDACT` |
-| URL allowlist | hostname parse | no substring `in` bypasses |
-| SSRF / IMDS guard | on | engine + gateway |
-| Email domain | exact / subdomain | rejects `user@company.com.evil.com` |
-| Intent patterns | broader | `only`, `just summarize`, `do not send`, … |
-| Schema pinning | on | MCP definition drift |
-| REQUIRE_APPROVAL | token queue | single-use resume |
+| Control | Notes |
+|---------|-------|
+| Server-side intent only | default on |
+| Session scope | optional envelope on `/session` |
+| Read budgets | `policy.yaml` → `read_budgets` |
+| API key | set `REQUIRE_API_KEY=1` on shared hosts |
+| URL allowlist | hostname parse |
+| SSRF / IMDS | engine + gateway |
+| Schema pinning | MCP definition drift |
+| REQUIRE_APPROVAL | token queue, single-use resume |
 
-Offline checks:
+Offline:
 
 ```bash
 python examples/security_hardening_test.py
 python examples/schema_pinning_demo.py
+```
+
+With engine:
+
+```bash
+python examples/scoped_intent_demo.py
+python examples/read_budget_demo.py
+python examples/approval_flow_demo.py
 ```
 
 ---
@@ -256,27 +225,11 @@ python examples/schema_pinning_demo.py
 
 This is a **local pilot / sandbox** runtime — not a full enterprise control plane.
 
-1. **Do not expose port 8000 to the internet.** Prefer `127.0.0.1`. Use a strong API key if you must bind wider.
-2. **Default gateway mode is `simulate`.** Real HTTP requires `AGENTGUARD_MODE=forward` **and** `AGENTGUARD_ALLOW_REAL_HTTP=1` (lab only). Private/IMDS targets stay blocked.
-3. **Policy is heuristic.** Tune `policy.yaml` (`trusted_hosts`, `trusted_domains`, thresholds) for your tools.
-4. **Audit logs may contain arguments.** Redaction is on by default; never commit `agentguard_audit.log`.
-5. **Webhooks** must not point at loopback/private addresses (SSRF guard).
-6. **Approval queue** is in-memory and single-process.
-
----
-
-## Project layout
-
-```text
-aegotrax/
-├── agentguard/           # runtime package (engine, gateway, SDK, policy)
-├── examples/             # SDK, schema pinning, approval flow demos
-├── data/                 # optional policy override for Docker
-├── agentguard_demo/      # attack / benchmark helpers
-├── PILOT.md              # pilot host guide
-├── docker-compose.yml
-└── pyproject.toml
-```
+1. Do not expose port 8000 to the internet without a strong API key.
+2. Default gateway mode is `simulate`.
+3. Policy is heuristic — tune `policy.yaml` for your tools.
+4. Never commit `agentguard_audit.log`.
+5. Approval queue and sessions are in-memory.
 
 ---
 

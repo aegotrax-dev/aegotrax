@@ -29,7 +29,7 @@ from .security_utils import (
 
 logger = logging.getLogger("agentguard.risk_engine")
 
-VERSION = "0.2.4"
+VERSION = "0.2.5"
 
 app = FastAPI(
     title="AgentGuard Risk Engine",
@@ -77,11 +77,24 @@ class MultiAgentRequest(BaseModel):
     approval_token: Optional[str] = None
 
 
+class SessionScope(BaseModel):
+    """Optional structured envelope for a session (0.2.5+).
+
+    When present, /verify becomes a consistency check against this scope
+    in addition to heuristic risk scoring.
+    """
+    allowed_tools: Optional[List[str]] = None
+    denied_tools: Optional[List[str]] = None
+    allowed_hosts: Optional[List[str]] = None
+    max_risk_without_approval: Optional[int] = None
+
+
 class SessionUpdate(BaseModel):
     session_id: str
     user_intent: str
     agent_id: str = "default-agent"
     user_id: Optional[str] = None
+    scope: Optional[SessionScope] = None
 
 
 class SessionReset(BaseModel):
@@ -111,6 +124,11 @@ def _default_policy() -> dict:
         "always_block_tools": [],
         "always_require_approval_tools": [],
         "outbound_tools": ["http_post", "send_email", "http_request", "webhook"],
+        "read_budgets": {
+            "default_max_calls": 20,
+            "on_exceed": "REQUIRE_APPROVAL",
+            "tools": {},
+        },
     }
 
 
@@ -168,13 +186,44 @@ def _purge_expired_sessions() -> None:
 def _touch_session(session_id: str) -> Dict[str, Any]:
     data = SESSION_PROVENANCE.get(session_id)
     if data is None:
-        data = {"history": [], "sensitive_sources": set(), "last_access": time.time()}
+        data = {
+            "history": [],
+            "sensitive_sources": set(),
+            "read_counts": {},
+            "last_access": time.time(),
+        }
         SESSION_PROVENANCE[session_id] = data
     else:
         if not isinstance(data.get("sensitive_sources"), set):
             data["sensitive_sources"] = set(data.get("sensitive_sources") or [])
+        if not isinstance(data.get("read_counts"), dict):
+            data["read_counts"] = {}
         data["last_access"] = time.time()
     return data
+
+
+def _budget_limit_for_tool(tool: str) -> Optional[int]:
+    """Max calls for tool this session, or None if budgets do not apply."""
+    budgets = POLICY_CONFIG.get("read_budgets") or {}
+    if not budgets:
+        return None
+    sensitive = set(POLICY_CONFIG.get("sensitive_tools") or [])
+    tool_overrides = budgets.get("tools") or {}
+    if tool in tool_overrides:
+        lim = tool_overrides[tool].get("max_calls")
+        return int(lim) if lim is not None else None
+    if tool not in sensitive:
+        return None
+    default = budgets.get("default_max_calls")
+    if default is None:
+        return None
+    return int(default)
+
+
+def _budget_on_exceed() -> str:
+    budgets = POLICY_CONFIG.get("read_budgets") or {}
+    action = (budgets.get("on_exceed") or "REQUIRE_APPROVAL").strip().upper()
+    return action if action in ("BLOCK", "REQUIRE_APPROVAL") else "REQUIRE_APPROVAL"
 
 
 def _check_rate_limit(session_id: str) -> Optional[str]:
@@ -349,6 +398,50 @@ def evaluate(request: MultiAgentRequest) -> dict:
                 "session_id": request.session_id,
             }
 
+    # --- Scoped session intent (0.2.5) ---
+    scope = (meta or {}).get("scope") if meta else None
+    if not isinstance(scope, dict):
+        scope = None
+
+    if scope:
+        denied = scope.get("denied_tools") or []
+        allowed = scope.get("allowed_tools")
+        if request.tool in denied:
+            return {
+                "decision": "BLOCK",
+                "risk_score": 100,
+                "reasons": [
+                    f"Session scope denies tool '{request.tool}' "
+                    f"(denied_tools={denied})."
+                ],
+                "attack_path": request.tool,
+                "matched_policies": ["session_scope_denied"],
+                "session_id": request.session_id,
+                "server_intent": (
+                    (meta or {}).get("user_intent")
+                    if settings.trust_server_intent_only
+                    else (request.user_intent or "")
+                ),
+            }
+        if allowed is not None and len(allowed) > 0 and request.tool not in allowed:
+            return {
+                "decision": "BLOCK",
+                "risk_score": 100,
+                "reasons": [
+                    f"Tool '{request.tool}' is outside session scope "
+                    f"(allowed_tools={allowed})."
+                ],
+                "attack_path": request.tool,
+                "matched_policies": ["session_scope_allowed"],
+                "session_id": request.session_id,
+                "server_intent": (
+                    (meta or {}).get("user_intent")
+                    if settings.trust_server_intent_only
+                    else (request.user_intent or "")
+                ),
+            }
+
+    budget_info = None
     score = 0
     reasons: List[str] = []
     matched: List[str] = []
@@ -409,6 +502,25 @@ def evaluate(request: MultiAgentRequest) -> dict:
     sensitive_tools = POLICY_CONFIG.get("sensitive_tools", [])
     if request.tool in sensitive_tools:
         session_data["sensitive_sources"].add(request.tool)
+
+    # --- Cumulative read budgets (0.2.5) ---
+    budget_limit = _budget_limit_for_tool(request.tool)
+    if budget_limit is not None:
+        counts = session_data.setdefault("read_counts", {})
+        new_count = int(counts.get(request.tool, 0)) + 1
+        counts[request.tool] = new_count
+        budget_info = {"tool": request.tool, "count": new_count, "limit": budget_limit}
+        if new_count > budget_limit:
+            action = _budget_on_exceed()
+            reasons.append(
+                f"Read budget exceeded for tool '{request.tool}': "
+                f"{new_count}/{budget_limit} calls this session."
+            )
+            matched.append("read_budget")
+            if action == "BLOCK":
+                score = 100
+            else:
+                score = max(score, RISK_THRESHOLDS.get("require_approval", 50))
 
     # Email domain (strict)
     if request.tool in ("send_email", "email"):
@@ -502,6 +614,13 @@ def evaluate(request: MultiAgentRequest) -> dict:
     block_threshold = RISK_THRESHOLDS.get("block", 70)
     approval_threshold = RISK_THRESHOLDS.get("require_approval", 50)
 
+    if scope and scope.get("max_risk_without_approval") is not None:
+        try:
+            session_bar = int(scope["max_risk_without_approval"])
+            approval_threshold = min(approval_threshold, max(0, session_bar))
+        except (TypeError, ValueError):
+            pass
+
     if final_score >= block_threshold:
         decision = "BLOCK"
     elif final_score >= approval_threshold:
@@ -584,6 +703,19 @@ def evaluate(request: MultiAgentRequest) -> dict:
         result["approval_token"] = approval_token
         result["approval_status"] = approval_status
         result["approval_expires_at"] = approval_expires_at
+    if budget_info is not None:
+        result["read_budget"] = budget_info
+    if scope:
+        result["session_scope"] = {
+            k: scope.get(k)
+            for k in (
+                "allowed_tools",
+                "denied_tools",
+                "allowed_hosts",
+                "max_risk_without_approval",
+            )
+            if scope.get(k) is not None
+        }
     return result
 
 
@@ -618,16 +750,19 @@ def verify_multi_agent(request: MultiAgentRequest, _: None = Depends(require_api
 
 @app.post("/session")
 def upsert_session(body: SessionUpdate, _: None = Depends(require_api_key)):
+    scope_data = body.scope.model_dump(exclude_none=True) if body.scope is not None else None
     SESSION_META[body.session_id] = {
         "user_intent": body.user_intent,
         "agent_id": body.agent_id,
         "user_id": body.user_id,
+        "scope": scope_data,
         "updated_at": time.time(),
     }
     if body.session_id not in SESSION_PROVENANCE:
         SESSION_PROVENANCE[body.session_id] = {
             "history": [],
             "sensitive_sources": set(),
+            "read_counts": {},
             "last_access": time.time(),
         }
     return {
@@ -655,10 +790,12 @@ def get_session(session_id: str, _: None = Depends(require_api_key)):
         raise HTTPException(status_code=404, detail="Session not found")
     sensitive = list(prov["sensitive_sources"]) if prov else []
     history = prov.get("history", []) if prov else []
+    read_counts = dict(prov.get("read_counts") or {}) if prov else {}
     return {
         "session_id": session_id,
         "meta": meta,
         "sensitive_sources": sensitive,
+        "read_counts": read_counts,
         "history": history,
     }
 

@@ -79,3 +79,13 @@ sensitive_payload_keywords:
 
 always_block_tools: []
 always_require_approval_tools: []
+
+read_budgets:
+  default_max_calls: 20
+  on_exceed: REQUIRE_APPROVAL
+  tools:
+    read_db:
+      max_calls: 10
+    read_document:
+      max_calls: 15
+
