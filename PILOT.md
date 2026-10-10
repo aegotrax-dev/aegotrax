@@ -1,4 +1,4 @@
-# AgentGuard Pilot Guide
+# Aegotrax Pilot Guide
 
 This document is for teams running a **limited production pilot**.
 
@@ -16,7 +16,7 @@ This document is for teams running a **limited production pilot**.
 ## 2. Architecture for pilot
 
 ```text
-Your Agent  ──►  AgentGuard SDK (or MCP Gateway)
+Your Agent  ──►  Aegotrax SDK (or MCP Gateway)
                       │
                       ▼
               Risk Engine (:8000)
@@ -38,7 +38,7 @@ Use MCP Gateway when the agent already speaks MCP and you want a single intercep
 **Requirements:** Docker Desktop running (Windows/Mac) or Docker Engine (Linux).
 
 ```bash
-cd agentguard_clean          # or agentguard_pip_ready — folder with docker-compose.yml
+cd aegotrax_clean          # or aegotrax_pip_ready — folder with docker-compose.yml
 docker compose up --build
 ```
 
@@ -55,7 +55,7 @@ Expected: `{"status":"ok",...}`
 | Path on host | Purpose |
 |--------------|---------|
 | `./data/policy.yaml` | Edit policy without rebuilding the image |
-| `./data/agentguard_audit.log` | Audit log (created at runtime) |
+| `./data/aegotrax_audit.log` | Audit log (created at runtime) |
 
 After editing policy:
 
@@ -66,7 +66,7 @@ docker compose restart
 Optional webhook (set in `docker-compose.yml` under `environment`, then restart):
 
 ```yaml
-AGENTGUARD_AUDIT_WEBHOOK: "https://your-endpoint.example/audit"
+AEGOTRAX_AUDIT_WEBHOOK: "https://your-endpoint.example/audit"
 ```
 
 Stop:
@@ -88,18 +88,18 @@ pip install -e .
 Optional hardening:
 
 ```bash
-export AGENTGUARD_API_KEY="replace-with-long-random-string"
-export AGENTGUARD_AUDIT_LOG="/var/log/agentguard/audit.log"
-export AGENTGUARD_POLICY_PATH="/etc/agentguard/policy.yaml"
-export AGENTGUARD_FAIL_CLOSED=true
-export AGENTGUARD_AUDIT_WEBHOOK="https://your-endpoint.example/audit"
+export AEGOTRAX_API_KEY="replace-with-long-random-string"
+export AEGOTRAX_AUDIT_LOG="/var/log/aegotrax/audit.log"
+export AEGOTRAX_POLICY_PATH="/etc/aegotrax/policy.yaml"
+export AEGOTRAX_FAIL_CLOSED=true
+export AEGOTRAX_AUDIT_WEBHOOK="https://your-endpoint.example/audit"
 ```
 
 Start engine:
 
 ```bash
-python -m agentguard.risk_engine
-# or: agentguard-engine
+python -m aegotrax.risk_engine
+# or: aegotrax-engine
 ```
 
 Verify:
@@ -113,7 +113,7 @@ curl http://127.0.0.1:8000/health
 ## 4. Wire your first agent (SDK)
 
 ```python
-from agentguard import set_session_context, verify_tool_call, AgentGuardError
+from aegotrax import set_session_context, verify_tool_call, AegotraxError
 
 SESSION = "pilot-agent-001"
 INTENT = "Answer the customer question; do not export data"
@@ -127,7 +127,7 @@ def safe_tool(name: str, arguments: dict):
         user_intent=INTENT,
         tool=name,
         arguments=arguments,
-        raise_on_block=True,  # raises AgentGuardError on BLOCK / REQUIRE_APPROVAL
+        raise_on_block=True,  # raises AegotraxError on BLOCK / REQUIRE_APPROVAL
     )
     # only runs if ALLOW
     return actually_run(name, arguments)
@@ -142,8 +142,8 @@ def safe_tool(name: str, arguments: dict):
 Copy the package policy and edit:
 
 ```bash
-cp $(python -c "import agentguard, pathlib; print(pathlib.Path(agentguard.__file__).parent / 'policy.yaml')") ./policy.yaml
-export AGENTGUARD_POLICY_PATH=$PWD/policy.yaml
+cp $(python -c "import aegotrax, pathlib; print(pathlib.Path(aegotrax.__file__).parent / 'policy.yaml')") ./policy.yaml
+export AEGOTRAX_POLICY_PATH=$PWD/policy.yaml
 ```
 
 Minimum changes for pilot:
@@ -158,7 +158,7 @@ Reload without restart:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/policy/reload \
-  -H "X-API-Key: $AGENTGUARD_API_KEY"
+  -H "X-API-Key: $AEGOTRAX_API_KEY"
 ```
 
 ---
@@ -168,11 +168,11 @@ curl -X POST http://127.0.0.1:8000/policy/reload \
 Set:
 
 ```bash
-export AGENTGUARD_APPROVAL_WEBHOOK=https://hooks.your-company.com/agentguard-approval
+export AEGOTRAX_APPROVAL_WEBHOOK=https://hooks.your-company.com/aegotrax-approval
 ```
 
 When decision is `REQUIRE_APPROVAL`, the engine POSTs the audit event JSON to that URL.  
-Your system can page a human; the tool call itself is **not** executed by AgentGuard.
+Your system can page a human; the tool call itself is **not** executed by Aegotrax.
 
 ---
 
@@ -185,7 +185,7 @@ Your system can page a human; the tool call itself is **not** executed by AgentG
 | Engine latency P95 | < 50 ms (local network) |
 | Coverage | All tool calls of the pilot agents go through verify |
 
-Review `agentguard_audit.log` weekly with security + the agent owners.
+Review `aegotrax_audit.log` weekly with security + the agent owners.
 
 ---
 
@@ -221,7 +221,7 @@ Review `agentguard_audit.log` weekly with security + the agent owners.
 Set on the pilot host:
 
 ```bash
-export AGENTGUARD_AUDIT_WEBHOOK=https://your-endpoint.example/audit
+export AEGOTRAX_AUDIT_WEBHOOK=https://your-endpoint.example/audit
 ```
 
 Every decision is POSTed as JSON (same fields as each `audit.log` line):
@@ -259,7 +259,7 @@ tool-call interceptor fires. Schema pinning closes that gap.
 **When proxying real upstream MCP servers:**
 
 ```python
-from agentguard.mcp_gateway import pin_upstream_tool, check_upstream_drift
+from aegotrax.mcp_gateway import pin_upstream_tool, check_upstream_drift
 
 # On first tools/list from upstream — pin as trusted
 pin_upstream_tool(name, schema)
@@ -281,12 +281,12 @@ if drift and drift.severity == "high":
 
 ## Hardening checklist (v0.2.3)
 
-- [ ] `AGENTGUARD_API_KEY` set; prefer `AGENTGUARD_REQUIRE_API_KEY=1`
-- [ ] Confirm `AGENTGUARD_SERVER_INTENT_ONLY=true` (default) — register intent via `/session`
+- [ ] `AEGOTRAX_API_KEY` set; prefer `AEGOTRAX_REQUIRE_API_KEY=1`
+- [ ] Confirm `AEGOTRAX_SERVER_INTENT_ONLY=true` (default) — register intent via `/session`
 - [ ] Tune `trusted_hosts` / `trusted_domains` in `policy.yaml` (hostname allowlist, not substrings)
-- [ ] Session TTL acceptable (`AGENTGUARD_SESSION_TTL`, default 3600)
+- [ ] Session TTL acceptable (`AEGOTRAX_SESSION_TTL`, default 3600)
 - [ ] Run `python examples/security_hardening_test.py` on the pilot host
-- [ ] Audit log path + redaction reviewed (`AGENTGUARD_AUDIT_REDACT`)
+- [ ] Audit log path + redaction reviewed (`AEGOTRAX_AUDIT_REDACT`)
 - [ ] Never bind engine to `0.0.0.0` without API key + network ACL
 
 
@@ -302,7 +302,7 @@ When a call scores in the approval band:
 3. Client re-issues the **same** tool+arguments with `approval_id` + `approval_token`
 4. Token is **single-use** (consumed on ALLOW)
 
-Env: `AGENTGUARD_APPROVAL_TTL` (default 1800s), `AGENTGUARD_APPROVAL_WEBHOOK`.
+Env: `AEGOTRAX_APPROVAL_TTL` (default 1800s), `AEGOTRAX_APPROVAL_WEBHOOK`.
 Demo: `python examples/approval_flow_demo.py` (engine must be running).
 '
 

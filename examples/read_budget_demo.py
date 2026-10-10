@@ -2,8 +2,8 @@
 
 Requires engine on 127.0.0.1:8000.
 
-    set AGENTGUARD_API_KEY=test-key-change-me
-    agentguard-engine
+    set AEGOTRAX_API_KEY=test-key-change-me
+    aegotrax-engine
     python examples/read_budget_demo.py
 """
 from __future__ import annotations
@@ -14,9 +14,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from agentguard import set_session_context, verify_tool_call
+from aegotrax import set_session_context, verify_tool_call
 
-API_KEY = os.environ.get("AGENTGUARD_API_KEY", "test-key-change-me")
+API_KEY = os.environ.get("AEGOTRAX_API_KEY", "test-key-change-me")
 
 
 def main() -> None:

@@ -3,13 +3,13 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentguard"
+name = "aegotrax"
 version = "0.2.5"
 description = "Runtime security gateway for AI agents (MCP + Python SDK)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-authors = [{ name = "AgentGuard" }]
+authors = [{ name = "Aegotrax" }]
 keywords = ["ai", "agents", "security", "mcp", "gateway", "firewall", "pilot"]
 dependencies = [
   "fastapi>=0.100.0",
@@ -29,8 +29,8 @@ demo = [
 ]
 
 [project.scripts]
-agentguard-engine = "agentguard.risk_engine:main"
-agentguard-gateway = "agentguard.mcp_gateway:main"
+aegotrax-engine = "aegotrax.risk_engine:main"
+aegotrax-gateway = "aegotrax.mcp_gateway:main"
 
 [project.urls]
 Homepage = "https://aegotrax.com"
@@ -40,7 +40,7 @@ Documentation = "https://github.com/aegotrax-dev/aegotrax#readme"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agentguard*"]
+include = ["aegotrax*"]
 
 [tool.setuptools.package-data]
-agentguard = ["policy.yaml"]
+aegotrax = ["policy.yaml"]

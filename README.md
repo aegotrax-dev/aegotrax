@@ -5,11 +5,11 @@
 Public site: [https://aegotrax.com](https://aegotrax.com)  
 Repository: [https://github.com/aegotrax-dev/aegotrax](https://github.com/aegotrax-dev/aegotrax)
 
-This repo is the open **pilot runtime**. The installable Python package name is `agentguard`.
+This repo is the open **pilot runtime**. The installable Python package name is `aegotrax`.
 
 ---
 
-# 🛡️ AgentGuard v0.2.5 — Scoped Intent + Read Budgets
+# 🛡️ Aegotrax v0.2.5 — Scoped Intent + Read Budgets
 
 Intercept tool calls, evaluate **server-side intent + data provenance**, enforce an optional **session scope envelope**, apply **cumulative read budgets**, and **block or require human approval** before sensitive actions run.
 
@@ -47,8 +47,8 @@ docker compose up --build
 ```
 
 ```bash
-agentguard-engine     # Risk Engine → http://127.0.0.1:8000
-agentguard-gateway    # MCP Gateway (stdio)
+aegotrax-engine     # Risk Engine → http://127.0.0.1:8000
+aegotrax-gateway    # MCP Gateway (stdio)
 curl -s http://127.0.0.1:8000/health
 # expect "version": "0.2.5"
 ```
@@ -58,7 +58,7 @@ curl -s http://127.0.0.1:8000/health
 ## Quick start (SDK)
 
 ```python
-from agentguard import verify_tool_call, set_session_context
+from aegotrax import verify_tool_call, set_session_context
 
 set_session_context(
     "sess-42",
@@ -130,17 +130,17 @@ python examples/read_budget_demo.py   # engine must be running
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `AGENTGUARD_API_KEY` | — | `X-API-Key` for engine APIs |
-| `AGENTGUARD_REQUIRE_API_KEY` | `false` | Refuse requests if no key configured |
-| `AGENTGUARD_SERVER_INTENT_ONLY` | `true` | Ignore client `user_intent` on `/verify` |
-| `AGENTGUARD_SESSION_TTL` | `3600` | Session idle TTL (`0` = never) |
-| `AGENTGUARD_RATE_LIMIT` | `120` | Max `/verify` per session per window |
-| `AGENTGUARD_RATE_WINDOW` | `60` | Rate-limit window (seconds) |
-| `AGENTGUARD_AUDIT_REDACT` | `true` | Redact sensitive keys in audit log |
-| `AGENTGUARD_APPROVAL_WEBHOOK` | — | POST on `REQUIRE_APPROVAL` (includes token) |
-| `AGENTGUARD_APPROVAL_TTL` | `1800` | Pending approval lifetime |
-| `AGENTGUARD_FAIL_CLOSED` | `true` | Block when engine unreachable |
-| `AGENTGUARD_MODE` | `simulate` | Gateway: `simulate` / `echo` / `forward` |
+| `AEGOTRAX_API_KEY` | — | `X-API-Key` for engine APIs |
+| `AEGOTRAX_REQUIRE_API_KEY` | `false` | Refuse requests if no key configured |
+| `AEGOTRAX_SERVER_INTENT_ONLY` | `true` | Ignore client `user_intent` on `/verify` |
+| `AEGOTRAX_SESSION_TTL` | `3600` | Session idle TTL (`0` = never) |
+| `AEGOTRAX_RATE_LIMIT` | `120` | Max `/verify` per session per window |
+| `AEGOTRAX_RATE_WINDOW` | `60` | Rate-limit window (seconds) |
+| `AEGOTRAX_AUDIT_REDACT` | `true` | Redact sensitive keys in audit log |
+| `AEGOTRAX_APPROVAL_WEBHOOK` | — | POST on `REQUIRE_APPROVAL` (includes token) |
+| `AEGOTRAX_APPROVAL_TTL` | `1800` | Pending approval lifetime |
+| `AEGOTRAX_FAIL_CLOSED` | `true` | Block when engine unreachable |
+| `AEGOTRAX_MODE` | `simulate` | Gateway: `simulate` / `echo` / `forward` |
 
 ---
 
@@ -228,7 +228,7 @@ This is a **local pilot / sandbox** runtime — not a full enterprise control pl
 1. Do not expose port 8000 to the internet without a strong API key.
 2. Default gateway mode is `simulate`.
 3. Policy is heuristic — tune `policy.yaml` for your tools.
-4. Never commit `agentguard_audit.log`.
+4. Never commit `aegotrax_audit.log`.
 5. Approval queue and sessions are in-memory.
 
 ---

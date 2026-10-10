@@ -13,7 +13,7 @@ from pathlib import Path
 # Allow running from repo root without install
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from agentguard.schema_pinning import (
+from aegotrax.schema_pinning import (
     CANONICAL_SCHEMAS,
     SchemaRegistry,
     schema_fingerprint,
