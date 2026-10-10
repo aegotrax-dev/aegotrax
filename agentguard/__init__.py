@@ -1,6 +1,6 @@
 """AgentGuard — Runtime security gateway for AI agents (MCP + SDK)."""
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 
 from .sdk import (
     AgentGuardError,

@@ -304,3 +304,26 @@ When a call scores in the approval band:
 
 Env: `AGENTGUARD_APPROVAL_TTL` (default 1800s), `AGENTGUARD_APPROVAL_WEBHOOK`.
 Demo: `python examples/approval_flow_demo.py` (engine must be running).
+'
+
+---
+
+## Scoped intent + read budgets (v0.2.5)
+
+### Scope on /session
+
+```python
+set_session_context(
+    "pilot-001",
+    user_intent="Answer the ticket; do not export",
+    scope={
+        "allowed_tools": ["read_document", "list_tickets"],
+        "denied_tools": ["http_post", "send_email", "read_db"],
+    },
+)
+```
+
+### Read budgets
+
+Tune in `policy.yaml` under `read_budgets`. Exceeding the call limit returns
+`REQUIRE_APPROVAL` (or `BLOCK`). Inspect counters via `GET /session/{id}` → `read_counts`.

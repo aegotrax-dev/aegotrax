@@ -133,6 +133,7 @@ def set_session_context(
     *,
     agent_id: str = "default-agent",
     user_id: Optional[str] = None,
+    scope: Optional[Dict[str, Any]] = None,
     engine_base: Optional[str] = None,
     api_key: Optional[str] = None,
 ) -> dict:
@@ -141,6 +142,14 @@ def set_session_context(
     With AGENTGUARD_SERVER_INTENT_ONLY=true (default), verify calls ignore
     client-supplied user_intent and use the value registered here.
     Optional user_id binds the session to a tenant identity.
+
+    Optional scope (0.2.5+) is a structured envelope, e.g.:
+      {
+        "allowed_tools": ["read_document", "list_tickets"],
+        "denied_tools": ["http_post", "send_email"],
+        "max_risk_without_approval": 40,
+      }
+    When set, /verify checks consistency against this scope.
     """
     base = engine_base or settings.engine_base
     key = api_key if api_key is not None else settings.api_key
@@ -155,6 +164,8 @@ def set_session_context(
     }
     if user_id is not None:
         body["user_id"] = user_id
+    if scope is not None:
+        body["scope"] = scope
 
     resp = requests.post(
         f"{base.rstrip('/')}/session",
