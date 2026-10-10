@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from agentguard.security_utils import (
+from aegotrax.security_utils import (
     email_domain_allowed,
     hostname_allowed,
     intent_is_restrictive,

@@ -1,7 +1,7 @@
 """
-LangGraph + AgentGuard Integration Demo
+LangGraph + Aegotrax Integration Demo
 
-Demonstrates protecting LangGraph tool calls using AgentGuard SDK.
+Demonstrates protecting LangGraph tool calls using Aegotrax SDK.
 """
 
 from typing import Annotated, TypedDict
@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 
-from agentguard import verify_tool_call, set_session_context
+from aegotrax import verify_tool_call, set_session_context
 
 
 class AgentState(TypedDict):
@@ -29,7 +29,7 @@ def send_external_data_tool(url: str, data: str) -> str:
 
 
 def execute_tool_safely(session_id: str, user_intent: str, tool_name: str, args: dict, tool_func):
-    print(f"\n[AgentGuard Interceptor] Evaluating call to '{tool_name}'...")
+    print(f"\n[Aegotrax Interceptor] Evaluating call to '{tool_name}'...")
     
     decision = verify_tool_call(
         session_id=session_id,
@@ -41,10 +41,10 @@ def execute_tool_safely(session_id: str, user_intent: str, tool_name: str, args:
     
     if decision.get("decision") == "BLOCK":
         reasons = decision.get("reasons", ["Blocked by policy"])
-        print(f"❌ [BLOCKED] AgentGuard stopped tool '{tool_name}': {reasons}")
+        print(f"❌ [BLOCKED] Aegotrax stopped tool '{tool_name}': {reasons}")
         return f"Error: Tool execution blocked by security policy. Reason: {reasons}"
     
-    print(f"✅ [ALLOWED] Tool '{tool_name}' approved by AgentGuard.")
+    print(f"✅ [ALLOWED] Tool '{tool_name}' approved by Aegotrax.")
     return tool_func(**args)
 
 
@@ -78,7 +78,7 @@ def run_demo():
     user_intent = "Summarize the ticket only"
     
     print("=" * 60)
-    print("Starting LangGraph + AgentGuard Security Demo")
+    print("Starting LangGraph + Aegotrax Security Demo")
     print(f"Session ID:  {session_id}")
     print(f"User Intent: '{user_intent}'")
     print("=" * 60)

@@ -1,1 +1,8 @@
-agentguard_audit.log 
+aegotrax_audit.log
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+.env

@@ -1,12 +1,12 @@
 """
-Minimal pilot example: protect a real Python function with AgentGuard SDK.
+Minimal pilot example: protect a real Python function with Aegotrax SDK.
 
 Prerequisites:
   1. pip install .
-  2. agentguard-engine  (running)
+  2. aegotrax-engine  (running)
 """
 
-from agentguard import set_session_context, verify_tool_call, protected_tool, AgentGuardError
+from aegotrax import set_session_context, verify_tool_call, protected_tool, AegotraxError
 
 
 def main():
@@ -48,10 +48,10 @@ def main():
     def send_email(to: str, body: str):
         return f"Email sent to {to}"
 
-    print("\nC) Decorator: email to gmail (should raise AgentGuardError)...")
+    print("\nC) Decorator: email to gmail (should raise AegotraxError)...")
     try:
         send_email("evil@gmail.com", "leaked data")
-    except AgentGuardError as e:
+    except AegotraxError as e:
         print("   Blocked as expected:", e.decision, e.reasons)
 
     print("\nDone.")
