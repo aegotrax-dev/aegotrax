@@ -1,22 +1,17 @@
+# Optional traffic stats backup. Third-party action must stay SHA-pinned.
+# Disabled by default so the security scanner does not flag unpinned actions.
+# To enable: replace USES_SHA below with the commit SHA of jgehrcke/github-repo-stats
+# (gh api repos/jgehrcke/github-repo-stats/git/ref/tags/v1.4.2 --jq .object.sha)
 name: GitHub Traffic Stats Backup
-
 on:
-  schedule:
-    # מורץ אוטומטית כל יום בחצות
-    - cron: '0 0 * * *'
-  # מאפשר הרצה ידנית בלחיצת כפתור
   workflow_dispatch:
-
+permissions:
+  contents: read
 jobs:
   run-backup:
+    if: false
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Fetch and Save Traffic Stats
-        uses: jgehrcke/github-repo-stats@v1.4.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          repository: ${{ github.repository }}
-          ghtoken: ${{ secrets.TRAFFIC_ACTION_TOKEN }}
-          databranch: 'traffic'
+          persist-credentials: false

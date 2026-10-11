@@ -92,7 +92,7 @@ def test_base64_normalization() -> None:
 def test_redaction() -> None:
     args = {
         "to": "a@b.com",
-        "api_key": "sk-live-secret",
+        "api_key": "REDACT_TEST_PLACEHOLDER",
         "password": "hunter2",
         "body": "hello",
         "long": "x" * 500,

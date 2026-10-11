@@ -20,7 +20,7 @@ pip install ".[demo]"
 3. **OpenAI API key** (only for the full LangGraph demo)
 
 ```bash
-export OPENAI_API_KEY=sk-...
+export OPENAI_API_KEY=your-key-here
 # optional
 cp .env.example .env   # if you prefer a file
 ```

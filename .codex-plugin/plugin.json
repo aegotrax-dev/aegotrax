@@ -1,0 +1,12 @@
+{
+  "name": "aegotrax",
+  "version": "0.2.5",
+  "description": "Runtime protection for AI agents — checks tool calls before they run (session intent, approval queue, audit stream).",
+  "author": "aegotrax-dev",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/aegotrax-dev/aegotrax",
+  "homepage": "https://aegotrax.com",
+  "documentation": "https://github.com/aegotrax-dev/aegotrax#readme",
+  "keywords": ["security", "ai-agents", "mcp", "guardrails", "runtime", "tool-calls"],
+  "categories": ["security", "developer-tools"]
+}
