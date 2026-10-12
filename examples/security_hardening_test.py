@@ -81,7 +81,7 @@ def test_intent_restrictive() -> None:
 def test_base64_normalization() -> None:
     import base64
 
-    secret = "customer_db_record confidential"
+    secret = "sample_customer_record_label"
     encoded = base64.b64encode(secret.encode()).decode()
     text = normalize_arg_text({"data": encoded})
     assert "customer" in text
@@ -93,7 +93,7 @@ def test_redaction() -> None:
     args = {
         "to": "a@b.com",
         "api_key": "REDACT_TEST_PLACEHOLDER",
-        "password": "hunter2",
+        "password": "example-not-a-real-secret",
         "body": "hello",
         "long": "x" * 500,
     }

@@ -2,7 +2,7 @@
 
 Requires engine on 127.0.0.1:8000.
 
-    set AEGOTRAX_API_KEY=test-key-change-me
+    set AEGOTRAX_API_KEY=<your-api-key>
     aegotrax-engine
     python examples/read_budget_demo.py
 """
@@ -16,7 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from aegotrax import set_session_context, verify_tool_call
 
-API_KEY = os.environ.get("AEGOTRAX_API_KEY", "test-key-change-me")
+API_KEY = os.environ.get("AEGOTRAX_API_KEY") or ""
+if not API_KEY:
+    raise SystemExit("Set AEGOTRAX_API_KEY before running this demo")
 
 
 def main() -> None:

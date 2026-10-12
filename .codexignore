@@ -4,3 +4,6 @@
 __pycache__/
 .venv/
 .pytest_cache/
+agentguard_demo/
+**/__pycache__/
+*.egg-info/
