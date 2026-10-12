@@ -1,0 +1,869 @@
+{
+  "schema_version": "scan-result.v1",
+  "contributorReview": {
+    "schemaVersion": "contributor-review.v1",
+    "purpose": "report-only",
+    "automaticApproval": false,
+    "sourceBoundAttestation": false,
+    "scannerVersion": "3.42.0",
+    "findingCount": 4,
+    "distinctEvidenceCount": 4,
+    "groups": [
+      {
+        "reportGroup": 1,
+        "ruleId": "HARDCODED_SECRET",
+        "severity": "high",
+        "filePath": "PILOT.md",
+        "lineNumber": 91,
+        "source": "native",
+        "category": "security",
+        "title": "Hardcoded secret detected",
+        "description": "Potential secret material was detected in PILOT.md.",
+        "remediation": "Remove the secret from source control and load it securely at runtime.",
+        "occurrences": 1,
+        "disposition": "not-adjudicated"
+      },
+      {
+        "reportGroup": 2,
+        "ruleId": "HARDCODED_SECRET",
+        "severity": "high",
+        "filePath": "docker-compose.yml",
+        "lineNumber": 15,
+        "source": "native",
+        "category": "security",
+        "title": "Hardcoded secret detected",
+        "description": "Potential secret material was detected in docker-compose.yml.",
+        "remediation": "Remove the secret from source control and load it securely at runtime.",
+        "occurrences": 1,
+        "disposition": "not-adjudicated"
+      },
+      {
+        "reportGroup": 3,
+        "ruleId": "HARDCODED_SECRET",
+        "severity": "high",
+        "filePath": "examples/security_hardening_test.py",
+        "lineNumber": 84,
+        "source": "native",
+        "category": "security",
+        "title": "Hardcoded secret detected",
+        "description": "Potential secret material was detected in examples/security_hardening_test.py.",
+        "remediation": "Remove the secret from source control and load it securely at runtime.",
+        "occurrences": 1,
+        "disposition": "not-adjudicated"
+      },
+      {
+        "reportGroup": 4,
+        "ruleId": "PLUGIN_JSON_RECOMMENDED_AUTHOR",
+        "severity": "info",
+        "filePath": ".codex-plugin/plugin.json",
+        "lineNumber": null,
+        "source": "native",
+        "category": "manifest-validation",
+        "title": "Recommended field \"author\" is missing",
+        "description": "The manifest is missing the documented recommended field \"author\".",
+        "remediation": "Add \"author\" to strengthen the plugin manifest metadata.",
+        "occurrences": 1,
+        "disposition": "not-adjudicated"
+      }
+    ],
+    "steps": [
+      "Keep the full scan report, scanner version, source revision and scan run together.",
+      "Report suspected false positives to the scanner project with the rule, location, intended behavior and a reproducer. For catalog submissions, use the existing submission PR. Do not publish real secrets or private source.",
+      "A maintainer must distinguish a detector defect from a source problem, a risky capability or an infrastructure failure.",
+      "Scanner maintainers own detector fixes and releases; catalog operators own their pinned scanner updates. Contributors need not maintain a scanner fork.",
+      "Keep the score and severity gates unchanged; do not disable rules or trust a submitter-provided baseline.",
+      "Repeat the scan on the exact source revision with the reviewed scanner release and unchanged policy. Catalog submissions require a new centralized scan."
+    ]
+  },
+  "tool_version": "3.42.0",
+  "profile": "default",
+  "policy_pass": true,
+  "verify_pass": true,
+  "scope": "plugin",
+  "score": 86,
+  "raw_score": 86,
+  "effective_score": 86,
+  "grade": "B",
+  "ecosystems": [
+    "codex"
+  ],
+  "packages": [
+    {
+      "ecosystem": "codex",
+      "packageKind": "single-plugin",
+      "rootPath": "C:\\Users\\TEST\\Desktop\\AI python projects\\AI AGENT SECURITY\\github V",
+      "manifestPath": "C:\\Users\\TEST\\Desktop\\AI python projects\\AI AGENT SECURITY\\github V\\.codex-plugin\\plugin.json",
+      "name": "aegotrax",
+      "version": "0.2.5"
+    }
+  ],
+  "summary": {
+    "gradeLabel": "Good",
+    "findings": {
+      "critical": 0,
+      "high": 3,
+      "medium": 0,
+      "low": 0,
+      "info": 1
+    },
+    "integrations": [
+      {
+        "name": "cisco-skill-scanner",
+        "status": "skipped",
+        "message": "No skills declared in plugin.json.",
+        "findingsCount": 0,
+        "metadata": {}
+      },
+      {
+        "name": "cisco-mcp-scanner",
+        "status": "skipped",
+        "message": "No .mcp.json found.",
+        "findingsCount": 0,
+        "metadata": {}
+      }
+    ]
+  },
+  "trust": {
+    "total": 73.25,
+    "execution": {
+      "includeExternal": false,
+      "computedAt": "2026-10-12T16:24:00.886263+00:00"
+    },
+    "domains": [
+      {
+        "domain": "plugin",
+        "label": "Codex Plugin Trust",
+        "score": 73.25,
+        "spec": {
+          "id": "HOL-HCS-CODEX-PLUGIN-TRUST-DRAFT",
+          "version": "0.1.0",
+          "path": "docs/trust/plugin-trust-draft.md",
+          "derivedFrom": [
+            "HCS-26",
+            "HCS-28"
+          ]
+        },
+        "profile": {
+          "id": "hol-codex-plugin-trust/baseline",
+          "version": "0.1"
+        },
+        "adapters": [
+          {
+            "id": "verification.manifest-integrity",
+            "label": "Manifest Integrity",
+            "weight": 0.35,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 100.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 100.0,
+                "rationale": "Manifest integrity blends existence, JSON validity, required fields, and semver checks.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "verification.interface-integrity",
+            "label": "Interface Integrity",
+            "weight": 0.25,
+            "contributionMode": "conditional",
+            "applicable": false,
+            "emitted": false,
+            "includedInDenominator": false,
+            "score": 0.0,
+            "components": []
+          },
+          {
+            "id": "verification.path-safety",
+            "label": "Path Safety",
+            "weight": 0.2,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 100.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 100.0,
+                "rationale": "Path safety uses the scanner's declared-path safety check.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "verification.marketplace-alignment",
+            "label": "Marketplace Alignment",
+            "weight": 0.2,
+            "contributionMode": "conditional",
+            "applicable": false,
+            "emitted": false,
+            "includedInDenominator": false,
+            "score": 0.0,
+            "components": []
+          },
+          {
+            "id": "security.disclosure",
+            "label": "Disclosure",
+            "weight": 0.15,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 100.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 100.0,
+                "rationale": "Disclosure is one explicit signal, not a proxy for the entire security posture.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "security.license",
+            "label": "License",
+            "weight": 0.1,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 100.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 100.0,
+                "rationale": "License clarity remains a separate scored signal.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "security.secret-hygiene",
+            "label": "Secret Hygiene",
+            "weight": 0.35,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 0.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 0.0,
+                "rationale": "Secret hygiene uses the scanner's hardcoded-secret detection.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "security.mcp-safety",
+            "label": "MCP Safety",
+            "weight": 0.2,
+            "contributionMode": "conditional",
+            "applicable": false,
+            "emitted": false,
+            "includedInDenominator": false,
+            "score": 0.0,
+            "components": []
+          },
+          {
+            "id": "security.approval-hygiene",
+            "label": "Approval Hygiene",
+            "weight": 0.2,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 100.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 100.0,
+                "rationale": "Approval hygiene checks for bypass-style defaults.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "metadata.documentation",
+            "label": "Documentation",
+            "weight": 0.15,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 100.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 100.0,
+                "rationale": "Documentation reflects README coverage for operators and maintainers.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "metadata.manifest-metadata",
+            "label": "Manifest Metadata",
+            "weight": 0.2625,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 0.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 0.0,
+                "rationale": "Manifest metadata tracks the scanner's recommended-metadata check.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "metadata.discoverability",
+            "label": "Discoverability",
+            "weight": 0.15,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 75.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 75.0,
+                "rationale": "Discoverability uses category plus keyword coverage.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "metadata.provenance",
+            "label": "Provenance",
+            "weight": 0.1875,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 40.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 40.0,
+                "rationale": "Provenance reflects author, homepage, and repository metadata coverage.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "operations.action-pinning",
+            "label": "Action Pinning",
+            "weight": 0.2625,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 100.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 100.0,
+                "rationale": "Action pinning uses the scanner's immutable-action check.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "operations.permission-scope",
+            "label": "Permission Scope",
+            "weight": 0.15,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 100.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 100.0,
+                "rationale": "Permission scope uses the least-privilege workflow check.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "operations.untrusted-checkout",
+            "label": "Untrusted Checkout",
+            "weight": 0.1875,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 100.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 100.0,
+                "rationale": "Untrusted-checkout protection uses the scanner's privileged-workflow check.",
+                "evidence": []
+              }
+            ]
+          },
+          {
+            "id": "operations.update-automation",
+            "label": "Update Automation",
+            "weight": 0.15,
+            "contributionMode": "universal",
+            "applicable": true,
+            "emitted": true,
+            "includedInDenominator": true,
+            "score": 100.0,
+            "components": [
+              {
+                "key": "score",
+                "score": 100.0,
+                "rationale": "Update automation combines Dependabot coverage and lockfile hygiene.",
+                "evidence": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "categories": [
+    {
+      "name": "Manifest Validation",
+      "score": 21,
+      "max": 25,
+      "checks": [
+        {
+          "name": "plugin.json exists",
+          "passed": true,
+          "points": 4,
+          "maxPoints": 4,
+          "message": "plugin.json found",
+          "findings": []
+        },
+        {
+          "name": "Valid JSON",
+          "passed": true,
+          "points": 4,
+          "maxPoints": 4,
+          "message": "plugin.json is valid JSON",
+          "findings": []
+        },
+        {
+          "name": "Required fields present",
+          "passed": true,
+          "points": 5,
+          "maxPoints": 5,
+          "message": "All required fields (name, version, description) are present.",
+          "findings": []
+        },
+        {
+          "name": "Version follows semver",
+          "passed": true,
+          "points": 3,
+          "maxPoints": 3,
+          "message": "Version \"0.2.5\" follows semver.",
+          "findings": []
+        },
+        {
+          "name": "Name is kebab-case",
+          "passed": true,
+          "points": 2,
+          "maxPoints": 2,
+          "message": "Name \"aegotrax\" is kebab-case.",
+          "findings": []
+        },
+        {
+          "name": "Recommended metadata present",
+          "passed": false,
+          "points": 0,
+          "maxPoints": 4,
+          "message": "Missing recommended metadata: author",
+          "findings": [
+            {
+              "ruleId": "PLUGIN_JSON_RECOMMENDED_AUTHOR",
+              "severity": "info",
+              "title": "Recommended field \"author\" is missing",
+              "description": "The manifest is missing the documented recommended field \"author\".",
+              "remediation": "Add \"author\" to strengthen the plugin manifest metadata.",
+              "filePath": ".codex-plugin/plugin.json",
+              "lineNumber": null,
+              "source": "native"
+            }
+          ]
+        },
+        {
+          "name": "Interface metadata complete if declared",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No interface metadata declared, check not applicable.",
+          "findings": []
+        },
+        {
+          "name": "Interface links and assets valid if declared",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No interface metadata declared, check not applicable.",
+          "findings": []
+        },
+        {
+          "name": "Declared paths are safe",
+          "passed": true,
+          "points": 3,
+          "maxPoints": 3,
+          "message": "Declared manifest paths stay within the plugin directory.",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "name": "Security",
+      "score": 9,
+      "max": 16,
+      "checks": [
+        {
+          "name": "SECURITY.md found",
+          "passed": true,
+          "points": 3,
+          "maxPoints": 3,
+          "message": "SECURITY.md found",
+          "findings": []
+        },
+        {
+          "name": "LICENSE found",
+          "passed": true,
+          "points": 3,
+          "maxPoints": 3,
+          "message": "LICENSE found (Apache-2.0)",
+          "findings": []
+        },
+        {
+          "name": "No hardcoded secrets",
+          "passed": false,
+          "points": 0,
+          "maxPoints": 7,
+          "message": "Hardcoded secrets found in: PILOT.md, docker-compose.yml, examples/security_hardening_test.py",
+          "findings": [
+            {
+              "ruleId": "HARDCODED_SECRET",
+              "severity": "high",
+              "title": "Hardcoded secret detected",
+              "description": "Potential secret material was detected in PILOT.md.",
+              "remediation": "Remove the secret from source control and load it securely at runtime.",
+              "filePath": "PILOT.md",
+              "lineNumber": 91,
+              "source": "native"
+            },
+            {
+              "ruleId": "HARDCODED_SECRET",
+              "severity": "high",
+              "title": "Hardcoded secret detected",
+              "description": "Potential secret material was detected in docker-compose.yml.",
+              "remediation": "Remove the secret from source control and load it securely at runtime.",
+              "filePath": "docker-compose.yml",
+              "lineNumber": 15,
+              "source": "native"
+            },
+            {
+              "ruleId": "HARDCODED_SECRET",
+              "severity": "high",
+              "title": "Hardcoded secret detected",
+              "description": "Potential secret material was detected in examples/security_hardening_test.py.",
+              "remediation": "Remove the secret from source control and load it securely at runtime.",
+              "filePath": "examples/security_hardening_test.py",
+              "lineNumber": 84,
+              "source": "native"
+            }
+          ]
+        },
+        {
+          "name": "No dangerous MCP commands",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No .mcp.json found, skipping check",
+          "findings": []
+        },
+        {
+          "name": "MCP remote transports are hardened",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No .mcp.json found, skipping transport hardening checks.",
+          "findings": []
+        },
+        {
+          "name": "No approval bypass defaults",
+          "passed": true,
+          "points": 3,
+          "maxPoints": 3,
+          "message": "No risky approval or sandbox defaults detected.",
+          "findings": []
+        },
+        {
+          "name": "Cisco MCP scan completed",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No .mcp.json found.",
+          "findings": []
+        },
+        {
+          "name": "No elevated Cisco MCP findings",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No .mcp.json found.",
+          "findings": []
+        },
+        {
+          "name": "MCP sources analyzable",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No .mcp.json found.",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "name": "Operational Security",
+      "score": 20,
+      "max": 20,
+      "checks": [
+        {
+          "name": "Third-party GitHub Actions pinned to SHAs",
+          "passed": true,
+          "points": 5,
+          "maxPoints": 5,
+          "message": "All third-party GitHub Actions and reusable workflows are pinned to immutable SHAs.",
+          "findings": []
+        },
+        {
+          "name": "No write-all GitHub Actions permissions",
+          "passed": true,
+          "points": 4,
+          "maxPoints": 4,
+          "message": "No GitHub Actions workflow requests write-all permissions.",
+          "findings": []
+        },
+        {
+          "name": "No privileged untrusted checkout patterns",
+          "passed": true,
+          "points": 5,
+          "maxPoints": 5,
+          "message": "No privileged workflow checks out untrusted branch content.",
+          "findings": []
+        },
+        {
+          "name": "Dependabot configured for automation surfaces",
+          "passed": true,
+          "points": 3,
+          "maxPoints": 3,
+          "message": "Dependabot is configured for the detected automation surfaces.",
+          "findings": []
+        },
+        {
+          "name": "Dependency manifests have lockfiles",
+          "passed": true,
+          "points": 3,
+          "maxPoints": 3,
+          "message": "Detected dependency manifests are paired with lockfiles or pinned requirements.",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "name": "Best Practices",
+      "score": 9,
+      "max": 9,
+      "checks": [
+        {
+          "name": "README.md found",
+          "passed": true,
+          "points": 3,
+          "maxPoints": 3,
+          "message": "README.md found",
+          "findings": []
+        },
+        {
+          "name": "Skills directory exists if declared",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No skills field declared, check not applicable",
+          "findings": []
+        },
+        {
+          "name": "SKILL.md frontmatter",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No skills field declared, check not applicable",
+          "findings": []
+        },
+        {
+          "name": "No .env files committed",
+          "passed": true,
+          "points": 3,
+          "maxPoints": 3,
+          "message": "No .env files found",
+          "findings": []
+        },
+        {
+          "name": ".codexignore found",
+          "passed": true,
+          "points": 3,
+          "maxPoints": 3,
+          "message": ".codexignore found",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "name": "Marketplace",
+      "score": 0,
+      "max": 0,
+      "checks": [
+        {
+          "name": "marketplace.json valid",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No marketplace.json found, check not applicable",
+          "findings": []
+        },
+        {
+          "name": "Policy fields present",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No marketplace.json found, check not applicable",
+          "findings": []
+        },
+        {
+          "name": "Marketplace sources are safe",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No marketplace.json found, check not applicable",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "name": "Skill Security",
+      "score": 0,
+      "max": 0,
+      "checks": [
+        {
+          "name": "Cisco skill scan completed",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No skills declared in plugin.json.",
+          "findings": []
+        },
+        {
+          "name": "No elevated Cisco skill findings",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No skills declared in plugin.json.",
+          "findings": []
+        },
+        {
+          "name": "Skills analyzable",
+          "passed": true,
+          "points": 0,
+          "maxPoints": 0,
+          "message": "No skills declared in plugin.json.",
+          "findings": []
+        }
+      ]
+    },
+    {
+      "name": "Code Quality",
+      "score": 10,
+      "max": 10,
+      "checks": [
+        {
+          "name": "No eval or Function constructor",
+          "passed": true,
+          "points": 5,
+          "maxPoints": 5,
+          "message": "No eval() or new Function() usage detected",
+          "findings": []
+        },
+        {
+          "name": "No shell injection patterns",
+          "passed": true,
+          "points": 5,
+          "maxPoints": 5,
+          "message": "No shell injection patterns detected",
+          "findings": []
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "ruleId": "HARDCODED_SECRET",
+      "severity": "high",
+      "category": "security",
+      "title": "Hardcoded secret detected",
+      "description": "Potential secret material was detected in PILOT.md.",
+      "remediation": "Remove the secret from source control and load it securely at runtime.",
+      "filePath": "PILOT.md",
+      "lineNumber": 91,
+      "source": "native"
+    },
+    {
+      "ruleId": "HARDCODED_SECRET",
+      "severity": "high",
+      "category": "security",
+      "title": "Hardcoded secret detected",
+      "description": "Potential secret material was detected in docker-compose.yml.",
+      "remediation": "Remove the secret from source control and load it securely at runtime.",
+      "filePath": "docker-compose.yml",
+      "lineNumber": 15,
+      "source": "native"
+    },
+    {
+      "ruleId": "HARDCODED_SECRET",
+      "severity": "high",
+      "category": "security",
+      "title": "Hardcoded secret detected",
+      "description": "Potential secret material was detected in examples/security_hardening_test.py.",
+      "remediation": "Remove the secret from source control and load it securely at runtime.",
+      "filePath": "examples/security_hardening_test.py",
+      "lineNumber": 84,
+      "source": "native"
+    },
+    {
+      "ruleId": "PLUGIN_JSON_RECOMMENDED_AUTHOR",
+      "severity": "info",
+      "category": "manifest-validation",
+      "title": "Recommended field \"author\" is missing",
+      "description": "The manifest is missing the documented recommended field \"author\".",
+      "remediation": "Add \"author\" to strengthen the plugin manifest metadata.",
+      "filePath": ".codex-plugin/plugin.json",
+      "lineNumber": null,
+      "source": "native"
+    }
+  ],
+  "timestamp": "2026-10-12T16:24:00.886263+00:00",
+  "pluginDir": "C:\\Users\\TEST\\Desktop\\AI python projects\\AI AGENT SECURITY\\github V"
+}
