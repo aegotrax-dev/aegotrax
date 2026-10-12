@@ -12,7 +12,7 @@ services:
       AEGOTRAX_AUDIT_LOG: "/data/aegotrax_audit.log"
       AEGOTRAX_POLICY_PATH: "/data/policy.yaml"
       # Recommended for any shared machine:
-      # AEGOTRAX_API_KEY: "replace-with-long-random-string"
+      # AEGOTRAX_API_KEY:   # provide via host env / secrets; never commit real values
       # Optional audit stream (public HTTPS only; loopback/private targets rejected):
       # AEGOTRAX_AUDIT_WEBHOOK: "https://your-endpoint.example/audit"
     volumes:

@@ -2,7 +2,10 @@
   "name": "aegotrax",
   "version": "0.2.5",
   "description": "Runtime protection for AI agents — checks tool calls before they run (session intent, approval queue, audit stream).",
-  "author": "aegotrax-dev",
+  "author": {
+    "name": "aegotrax-dev",
+    "url": "https://github.com/aegotrax-dev"
+  },
   "license": "Apache-2.0",
   "repository": "https://github.com/aegotrax-dev/aegotrax",
   "homepage": "https://aegotrax.com",

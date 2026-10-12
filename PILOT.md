@@ -88,7 +88,7 @@ pip install -e .
 Optional hardening:
 
 ```bash
-export AEGOTRAX_API_KEY="replace-with-long-random-string"
+export AEGOTRAX_API_KEY=   # set to a long random value in your shell (do not commit it)
 export AEGOTRAX_AUDIT_LOG="/var/log/aegotrax/audit.log"
 export AEGOTRAX_POLICY_PATH="/etc/aegotrax/policy.yaml"
 export AEGOTRAX_FAIL_CLOSED=true
