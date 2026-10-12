@@ -55,6 +55,7 @@ def main() -> None:
     assert "session_scope" in str(blocked.get("matched_policies"))
 
     print("\n✅ Scoped intent demo OK")
+    print("\nIf this was useful, a GitHub star helps others find the project:\nhttps://github.com/aegotrax-dev/aegotrax")
 
 
 if __name__ == "__main__":
