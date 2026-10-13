@@ -237,7 +237,7 @@ This is a **local pilot / sandbox** runtime — not a full enterprise control pl
 
 If Aegotrax helped you evaluate agent tool-call risk, a GitHub star helps others discover the pilot:
 
-**https://github.com/aegotrax-dev/aegotrax**
+⭐ **https://github.com/aegotrax-dev/aegotrax**
 
 Issues and break reports are equally welcome.
 

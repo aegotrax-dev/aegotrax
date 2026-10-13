@@ -48,7 +48,7 @@ def main() -> None:
     assert "read_budget" in (last.get("matched_policies") or [])
 
     print("\n✅ Read budget demo OK")
-    print("\nIf this was useful, a GitHub star helps others find the project:\nhttps://github.com/aegotrax-dev/aegotrax")
+    print("\n⭐ If this was useful, a GitHub star helps others find the project:\nhttps://github.com/aegotrax-dev/aegotrax")
 
 
 if __name__ == "__main__":

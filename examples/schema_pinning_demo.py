@@ -86,7 +86,7 @@ def main() -> None:
     print(json.dumps(registry.list_drift_events(), indent=2, ensure_ascii=False))
 
 
-    print("\nIf this was useful, a GitHub star helps others find the project:\nhttps://github.com/aegotrax-dev/aegotrax")
+    print("\n⭐ If this was useful, a GitHub star helps others find the project:\nhttps://github.com/aegotrax-dev/aegotrax")
 
 
 if __name__ == "__main__":
