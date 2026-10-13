@@ -1,7 +1,7 @@
 # Pinned install surface for reproducible scans / CI (runtime package still uses pyproject.toml)
 fastapi==0.115.6
 uvicorn==0.32.1
-pydantic==2.10.3
+pydantic==2.14.0
 mcp==1.1.2
 requests==2.32.3
 pyyaml==6.0.2
