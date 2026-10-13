@@ -117,8 +117,5 @@ def main() -> None:
     test_base64_normalization()
     test_redaction()
     print("\nAll security hardening unit checks passed.")
-    print("\n⭐ If this was useful, a GitHub star helps others find the project:\nhttps://github.com/aegotrax-dev/aegotrax")
-
-
 if __name__ == "__main__":
     main()

@@ -1,20 +1,17 @@
-# Aegotrax Security Policy (hardened pilot)
+# Aegotrax Security Policy (0.2.6)
 # Override with AEGOTRAX_POLICY_PATH or place policy.yaml in CWD.
 
 risk_thresholds:
   block: 70
   require_approval: 50
 
-# Email recipient domains (use @prefix or bare domain; matched exactly / subdomain)
 trusted_domains:
   - "@company.com"
   - "company.com"
 
-# Full endpoint URLs (legacy) — host is extracted for allowlist checks
 trusted_endpoints:
   - "https://api.internal-analytics.com/log"
 
-# Preferred: bare hostnames for outbound HTTP allowlist (exact or subdomain)
 trusted_hosts:
   - "api.internal-analytics.com"
 
@@ -32,6 +29,30 @@ outbound_tools:
   - "http_request"
   - "webhook"
   - "email"
+
+# Tool risk direction at registration (0.2.6). Unclassified → open_risk (fail-closed).
+tool_classes:
+  default: open_risk
+  reduce_risk:
+    - "read_document"
+    - "read_db"
+    - "list_users"
+    - "query_customers"
+    - "get_ssn"
+    - "export_records"
+    - "close_position"
+    - "pause_trading"
+  open_risk:
+    - "http_post"
+    - "send_email"
+    - "http_request"
+    - "webhook"
+    - "email"
+    - "execute_code"
+    - "run_shell"
+    - "delete_user"
+  # open_risk tools elevate to REQUIRE_APPROVAL unless already blocked
+  open_risk_min_decision: REQUIRE_APPROVAL
 
 dangerous_script_keywords:
   - "wipe"
@@ -80,14 +101,24 @@ sensitive_payload_keywords:
 always_block_tools: []
 always_require_approval_tools: []
 
-# Cumulative read budgets per session (0.2.5)
-# Count calls to sensitive_tools; exceed → REQUIRE_APPROVAL or BLOCK
+# Cumulative read budgets (0.2.5+)
 read_budgets:
   default_max_calls: 20
-  on_exceed: REQUIRE_APPROVAL  # or BLOCK
+  on_exceed: REQUIRE_APPROVAL
+  # 0.2.6: close session after budget exceed so further calls BLOCK
+  end_session_on_exceed: true
   tools:
     read_db:
       max_calls: 10
     read_document:
       max_calls: 15
 
+# Session sensitivity ceiling (0.2.6) — monotonic tag; outbound gated on ceiling
+sensitivity_ceiling:
+  enabled: true
+  # raise session ceiling when these tools are invoked (reads)
+  raise_on_tools: []  # empty → use sensitive_tools
+  raise_to: 1
+  # outbound tools when ceiling >= min → decision below
+  outbound_min_ceiling: 1
+  on_outbound: REQUIRE_APPROVAL

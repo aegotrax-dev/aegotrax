@@ -14,7 +14,7 @@ import yaml
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from .approval import approval_queue
+from .approval import approval_queue, call_fingerprint
 from .audit_models import AuditEvent
 from .config import settings, warn_insecure_defaults
 from .security_utils import (
@@ -29,7 +29,7 @@ from .security_utils import (
 
 logger = logging.getLogger("aegotrax.risk_engine")
 
-VERSION = "0.2.5"
+VERSION = "0.2.6"
 
 app = FastAPI(
     title="Aegotrax Risk Engine",
@@ -225,6 +225,57 @@ def _budget_on_exceed() -> str:
     action = (budgets.get("on_exceed") or "REQUIRE_APPROVAL").strip().upper()
     return action if action in ("BLOCK", "REQUIRE_APPROVAL") else "REQUIRE_APPROVAL"
 
+def _end_session_on_budget_exceed() -> bool:
+    budgets = POLICY_CONFIG.get("read_budgets") or {}
+    return bool(budgets.get("end_session_on_exceed", True))
+
+
+def _close_session(session_id: str, reason: str) -> None:
+    meta = SESSION_META.get(session_id) or {}
+    meta["closed"] = True
+    meta["closed_reason"] = reason
+    meta["closed_at"] = time.time()
+    SESSION_META[session_id] = meta
+
+
+def _session_is_closed(session_id: str) -> Optional[str]:
+    meta = SESSION_META.get(session_id) or {}
+    if meta.get("closed"):
+        return str(meta.get("closed_reason") or "session_closed")
+    return None
+
+
+def _tool_class(tool: str) -> str:
+    """open_risk | reduce_risk — default open_risk (fail-closed)."""
+    cfg = POLICY_CONFIG.get("tool_classes") or {}
+    default = (cfg.get("default") or "open_risk").strip().lower()
+    if tool in (cfg.get("reduce_risk") or []):
+        return "reduce_risk"
+    if tool in (cfg.get("open_risk") or []):
+        return "open_risk"
+    return default if default in ("open_risk", "reduce_risk") else "open_risk"
+
+
+def _sensitivity_cfg() -> dict:
+    return POLICY_CONFIG.get("sensitivity_ceiling") or {}
+
+
+def _raise_sensitivity_ceiling(session_data: Dict[str, Any], tool: str) -> int:
+    cfg = _sensitivity_cfg()
+    if not cfg.get("enabled", True):
+        return int(session_data.get("sensitivity_ceiling") or 0)
+    raise_tools = set(cfg.get("raise_on_tools") or [])
+    if not raise_tools:
+        raise_tools = set(POLICY_CONFIG.get("sensitive_tools") or [])
+    ceiling = int(session_data.get("sensitivity_ceiling") or 0)
+    if tool in raise_tools:
+        target = int(cfg.get("raise_to") or 1)
+        if target > ceiling:
+            ceiling = target
+            session_data["sensitivity_ceiling"] = ceiling
+    return ceiling
+
+
 
 def _check_rate_limit(session_id: str) -> Optional[str]:
     limit = settings.rate_limit_per_session
@@ -398,6 +449,46 @@ def evaluate(request: MultiAgentRequest) -> dict:
                 "session_id": request.session_id,
             }
 
+
+
+    # --- Hold new permits while prior delivery is uncertain (0.2.6) ---
+    try:
+        fp_hold = call_fingerprint(request.tool, request.arguments or {})
+        prior = approval_queue.uncertain_fingerprint(fp_hold)
+        if prior is not None and not (request.approval_id and request.approval_token):
+            return {
+                "decision": "BLOCK",
+                "risk_score": 80,
+                "reasons": [
+                    f"Prior approval {prior.approval_id} for this tool+args has delivery_status="
+                    f"{prior.delivery_status}. Resolve via POST /approval/delivery before a new permit."
+                ],
+                "attack_path": request.tool,
+                "matched_policies": ["delivery_uncertain_hold"],
+                "session_id": request.session_id,
+                "approval_id": prior.approval_id,
+                "delivery_status": prior.delivery_status,
+            }
+    except Exception:
+        pass
+
+    # --- Session exhausted / closed (0.2.6) ---
+    closed_reason = _session_is_closed(request.session_id)
+    if closed_reason:
+        return {
+            "decision": "BLOCK",
+            "risk_score": 100,
+            "reasons": [
+                f"Session closed ({closed_reason}). Register a new /session with a fresh intent envelope."
+            ],
+            "attack_path": request.tool,
+            "matched_policies": ["session_exhausted"],
+            "session_id": request.session_id,
+            "session_closed": True,
+            "closed_reason": closed_reason,
+        }
+
+
     # --- Scoped session intent (0.2.5) ---
     scope = (meta or {}).get("scope") if meta else None
     if not isinstance(scope, dict):
@@ -517,6 +608,15 @@ def evaluate(request: MultiAgentRequest) -> dict:
                 f"{new_count}/{budget_limit} calls this session."
             )
             matched.append("read_budget")
+            if _end_session_on_budget_exceed():
+                _close_session(
+                    request.session_id,
+                    f"read_budget_exhausted tool={request.tool}",
+                )
+                matched.append("session_budget_exhausted")
+                reasons.append(
+                    "Session closed after read budget exceed — open a new /session to continue."
+                )
             if action == "BLOCK":
                 score = 100
             else:
@@ -609,6 +709,44 @@ def evaluate(request: MultiAgentRequest) -> dict:
     if len(session_data["history"]) > 200:
         session_data["history"] = session_data["history"][-200:]
     SESSION_PROVENANCE[request.session_id] = session_data
+
+
+    # --- Sensitivity ceiling (0.2.6): raise on sensitive reads; gate outbound ---
+    ceiling = _raise_sensitivity_ceiling(session_data, request.tool)
+    scfg = _sensitivity_cfg()
+    if scfg.get("enabled", True):
+        outbound = set(POLICY_CONFIG.get("outbound_tools") or [])
+        min_c = int(scfg.get("outbound_min_ceiling") or 1)
+        if request.tool in outbound and ceiling >= min_c:
+            action = (scfg.get("on_outbound") or "REQUIRE_APPROVAL").strip().upper()
+            if action not in ("BLOCK", "REQUIRE_APPROVAL"):
+                action = "REQUIRE_APPROVAL"
+            reasons.append(
+                f"Session sensitivity ceiling={ceiling}: outbound tool '{request.tool}' "
+                f"requires {action} after sensitive context."
+            )
+            matched.append("sensitivity_ceiling_outbound")
+            if action == "BLOCK":
+                score = max(score, RISK_THRESHOLDS.get("block", 70))
+            else:
+                score = max(score, RISK_THRESHOLDS.get("require_approval", 50))
+
+    # --- Tool class open_risk default fail-closed (0.2.6) ---
+    tclass = _tool_class(request.tool)
+    matched.append(f"tool_class:{tclass}")
+    if tclass == "open_risk":
+        tc = POLICY_CONFIG.get("tool_classes") or {}
+        min_dec = (tc.get("open_risk_min_decision") or "REQUIRE_APPROVAL").strip().upper()
+        if min_dec == "BLOCK":
+            score = max(score, RISK_THRESHOLDS.get("block", 70))
+            reasons.append(f"Tool '{request.tool}' classed open_risk (fail-closed) → BLOCK.")
+            matched.append("tool_class_open_risk")
+        else:
+            score = max(score, RISK_THRESHOLDS.get("require_approval", 50))
+            reasons.append(
+                f"Tool '{request.tool}' classed open_risk (default fail-closed) → REQUIRE_APPROVAL."
+            )
+            matched.append("tool_class_open_risk")
 
     final_score = min(score, 100)
     block_threshold = RISK_THRESHOLDS.get("block", 70)
@@ -757,6 +895,8 @@ def upsert_session(body: SessionUpdate, _: None = Depends(require_api_key)):
         "user_id": body.user_id,
         "scope": scope_data,
         "updated_at": time.time(),
+        "closed": False,
+        "closed_reason": None,
     }
     if body.session_id not in SESSION_PROVENANCE:
         SESSION_PROVENANCE[body.session_id] = {
@@ -791,11 +931,15 @@ def get_session(session_id: str, _: None = Depends(require_api_key)):
     sensitive = list(prov["sensitive_sources"]) if prov else []
     history = prov.get("history", []) if prov else []
     read_counts = dict(prov.get("read_counts") or {}) if prov else {}
+    ceiling = int(prov.get("sensitivity_ceiling") or 0) if prov else 0
     return {
         "session_id": session_id,
         "meta": meta,
         "sensitive_sources": sensitive,
         "read_counts": read_counts,
+        "sensitivity_ceiling": ceiling,
+        "closed": bool((meta or {}).get("closed")),
+        "closed_reason": (meta or {}).get("closed_reason"),
         "history": history,
     }
 

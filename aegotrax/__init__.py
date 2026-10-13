@@ -1,6 +1,6 @@
 """Aegotrax — Runtime security gateway for AI agents (MCP + SDK)."""
 
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 
 from .sdk import (
     AegotraxError,
