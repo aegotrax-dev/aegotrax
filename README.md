@@ -5,237 +5,152 @@
 Public site: [https://aegotrax.com](https://aegotrax.com)  
 Repository: [https://github.com/aegotrax-dev/aegotrax](https://github.com/aegotrax-dev/aegotrax)
 
-This repo is the open **pilot runtime**. The installable Python package name is `aegotrax`.
+This repo is the open **pilot runtime**. Package name: `aegotrax`.
 
 ---
 
-# 🛡️ Aegotrax v0.2.5 — Scoped Intent + Read Budgets
+# 🛡️ Aegotrax v0.2.6
 
-Intercept tool calls, evaluate **server-side intent + data provenance**, enforce an optional **session scope envelope**, apply **cumulative read budgets**, and **block or require human approval** before sensitive actions run.
+Intercept tool calls, evaluate **server-side session intent + scope**, apply **read budgets**, **sensitivity ceiling**, **tool risk classes**, and **block / require human approval** before sensitive actions run.
 
 | Integration | Use when |
 |-------------|----------|
 | **Python SDK** | You call tools from your own code (`verify_tool_call` / `@protected_tool`) |
 | **MCP Gateway** | The agent already speaks MCP and you want one interception point |
 
-### What’s new in 0.2.5
-- **Scoped session intent** — `/session` accepts optional `scope` (`allowed_tools`, `denied_tools`, …); `/verify` becomes a consistency check against that envelope
-- **Cumulative read budgets** — per-session call counts on `sensitive_tools`; exceed → `REQUIRE_APPROVAL` or `BLOCK` (policy)
-- From **0.2.4**: human-approval token queue, server-side intent only, hostname allowlists, SSRF/IMDS, schema pinning, rate limit, audit redaction
+### What’s new in 0.2.6
+- **Session exhaust** — after a read-budget exceed, the session can close; further calls `BLOCK` until a new `/session`
+- **Sensitivity ceiling** — monotonic session tag after sensitive reads; outbound tools are gated on the ceiling
+- **Tool classes** — `open_risk` / `reduce_risk` in policy; unclassified tools default to **open_risk** (fail-closed)
+- **Approval delivery** — `POST /approval/delivery` with `delivered` | `delivery_uncertain` | `failed`; new permits for the same tool+args are held while delivery is unresolved
+
+### From 0.2.5 / 0.2.4
+- Scoped session intent (`allowed_tools` / `denied_tools` on `/session`)
+- Cumulative read budgets on `sensitive_tools`
+- Human-approval token queue (single-use resume)
+- Server-side intent only (client cannot spoof `user_intent` on verify)
+- Hostname allowlists, SSRF/IMDS guards, MCP schema pinning + drift detection
 
 ---
 
-## Install
+## Quick start
 
 ```bash
 git clone https://github.com/aegotrax-dev/aegotrax.git
 cd aegotrax
-
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 source .venv/bin/activate
-
-pip install -U pip
 pip install .
+
+export AEGOTRAX_API_KEY=test-key-change-me   # Windows: set AEGOTRAX_API_KEY=...
+aegotrax-engine
+# other terminal:
+curl -s http://127.0.0.1:8000/health   # → version 0.2.6
+python examples/sdk_pilot_example.py
 ```
 
-**Docker (engine only):**
+Docker:
 
 ```bash
 docker compose up --build
-# → http://127.0.0.1:8000
-```
-
-```bash
-aegotrax-engine     # Risk Engine → http://127.0.0.1:8000
-aegotrax-gateway    # MCP Gateway (stdio)
-curl -s http://127.0.0.1:8000/health
-# expect "version": "0.2.5"
 ```
 
 ---
 
-## Quick start (SDK)
+## Core controls
 
-```python
-from aegotrax import verify_tool_call, set_session_context
+| Control | Where | Behavior |
+|---------|--------|----------|
+| Session intent + scope | `POST /session` | Host-declared envelope; agent does not write the boundary |
+| Read budgets | `policy.yaml` → `read_budgets` | Count sensitive reads; exceed → approval/block + optional **end session** |
+| Sensitivity ceiling | `policy.yaml` → `sensitivity_ceiling` | Raise tag on sensitive reads; gate outbound |
+| Tool classes | `policy.yaml` → `tool_classes` | `open_risk` elevates to approval/block; default fail-closed |
+| Human approval | `REQUIRE_APPROVAL` → `/approval/decide` → resume | Single-use token bound to tool+args fingerprint |
+| Delivery tracking | `POST /approval/delivery` | Avoid quiet double-permits when side effect is uncertain |
+| Schema pinning | MCP path | Drift / poisoned tool descriptions |
 
-set_session_context(
-    "sess-42",
-    user_intent="Summarize the ticket only",
-    agent_id="support-agent",
-    scope={
-        "allowed_tools": ["read_document", "list_tickets"],
-        "denied_tools": ["http_post", "send_email"],
-    },
-)
-
-result = verify_tool_call(
-    session_id="sess-42",
-    agent_id="support-agent",
-    tool="http_post",
-    arguments={"url": "https://evil.example", "data": "x"},
-)
-# → BLOCK (outside session scope)
-```
-
-More detail: **[PILOT.md](./PILOT.md)**.
-
----
-
-## Scoped session intent (0.2.5)
-
-Register a structured envelope with the intent string:
-
-| Field | Effect |
-|-------|--------|
-| `allowed_tools` | If non-empty, only these tools may run |
-| `denied_tools` | Always blocked for this session |
-| `max_risk_without_approval` | Optional lower bar for `REQUIRE_APPROVAL` |
-| `allowed_hosts` | Reserved for tighter host constraints |
-
-Without `scope`, behaviour matches 0.2.4 (string intent + heuristics only).
-
-```bash
-python examples/scoped_intent_demo.py   # engine must be running
-```
-
----
-
-## Cumulative read budgets (0.2.5)
-
-Counts calls to `sensitive_tools` per session. Configured in `policy.yaml`:
+Example `policy.yaml` fragments:
 
 ```yaml
 read_budgets:
   default_max_calls: 20
-  on_exceed: REQUIRE_APPROVAL  # or BLOCK
+  on_exceed: REQUIRE_APPROVAL
+  end_session_on_exceed: true
   tools:
     read_db:
       max_calls: 10
-    read_document:
-      max_calls: 15
+
+sensitivity_ceiling:
+  enabled: true
+  raise_to: 1
+  outbound_min_ceiling: 1
+  on_outbound: REQUIRE_APPROVAL
+
+tool_classes:
+  default: open_risk
+  reduce_risk: [read_db, read_document, list_users]
+  open_risk: [http_post, send_email, run_shell]
+  open_risk_min_decision: REQUIRE_APPROVAL
 ```
 
-Response includes `read_budget: {tool, count, limit}` when applicable.  
-`/session/reset` and session TTL clear counters.
+---
+
+## Demos
 
 ```bash
-python examples/read_budget_demo.py   # engine must be running
-```
-
----
-
-## Configuration (environment)
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `AEGOTRAX_API_KEY` | — | `X-API-Key` for engine APIs |
-| `AEGOTRAX_REQUIRE_API_KEY` | `false` | Refuse requests if no key configured |
-| `AEGOTRAX_SERVER_INTENT_ONLY` | `true` | Ignore client `user_intent` on `/verify` |
-| `AEGOTRAX_SESSION_TTL` | `3600` | Session idle TTL (`0` = never) |
-| `AEGOTRAX_RATE_LIMIT` | `120` | Max `/verify` per session per window |
-| `AEGOTRAX_RATE_WINDOW` | `60` | Rate-limit window (seconds) |
-| `AEGOTRAX_AUDIT_REDACT` | `true` | Redact sensitive keys in audit log |
-| `AEGOTRAX_APPROVAL_WEBHOOK` | — | POST on `REQUIRE_APPROVAL` (includes token) |
-| `AEGOTRAX_APPROVAL_TTL` | `1800` | Pending approval lifetime |
-| `AEGOTRAX_FAIL_CLOSED` | `true` | Block when engine unreachable |
-| `AEGOTRAX_MODE` | `simulate` | Gateway: `simulate` / `echo` / `forward` |
-
----
-
-## Engine API
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Liveness + version |
-| POST | `/verify-multi-agent` | Main decision API |
-| POST | `/session` | Set intent (+ optional `scope`, `user_id`) |
-| POST | `/session/reset` | Clear session provenance + budgets |
-| GET | `/session/{id}` | Inspect session (includes `read_counts`) |
-| POST | `/policy/reload` | Reload policy without restart |
-| POST | `/approval/decide` | Approve or deny (`token` required) |
-| GET | `/approval/{id}` | Approval status |
-| GET | `/approvals/pending` | List pending |
-
----
-
-## Human approval queue (0.2.4+)
-
-1. `REQUIRE_APPROVAL` → `approval_id` + `approval_token`
-2. `POST /approval/decide` with `{approval_id, token, decision}`
-3. Re-issue same tool+args with token (single-use)
-
-```bash
-python examples/approval_flow_demo.py
-```
-
-Queue is **in-memory** (cleared on restart) — pilot only.
-
----
-
-## Threats covered
-
-- Indirect prompt injection → tool abuse
-- Data provenance / multi-hop exfiltration
-- Intent constraint violations
-- Session scope violations (tool outside envelope)
-- Slow-drip reads inside a valid scope (call budgets)
-- Dangerous script keywords
-- Poisoned MCP tool descriptions (schema pinning)
-- Client spoofing of `user_intent`
-- Substring allowlist bypasses / SSRF / IMDS
-- Session flooding (rate limit)
-
-**Still limited:** byte-level budgets; multi-instance shared state; full enterprise HA.
-
----
-
-## Security hardening
-
-| Control | Notes |
-|---------|-------|
-| Server-side intent only | default on |
-| Session scope | optional envelope on `/session` |
-| Read budgets | `policy.yaml` → `read_budgets` |
-| API key | set `REQUIRE_API_KEY=1` on shared hosts |
-| URL allowlist | hostname parse |
-| SSRF / IMDS | engine + gateway |
-| Schema pinning | MCP definition drift |
-| REQUIRE_APPROVAL | token queue, single-use resume |
-
-Offline:
-
-```bash
+# offline
 python examples/security_hardening_test.py
 python examples/schema_pinning_demo.py
-```
 
-With engine:
-
-```bash
+# engine required + AEGOTRAX_API_KEY
 python examples/scoped_intent_demo.py
 python examples/read_budget_demo.py
+python examples/sensitivity_ceiling_demo.py
 python examples/approval_flow_demo.py
+python examples/sdk_pilot_example.py
 ```
+
+---
+
+## Threats covered (pilot)
+
+- In-scope tool abuse (sequence / volume), not only static allowlists
+- Client spoofing of `user_intent`
+- Slow-drip sensitive reads (budgets + session exhaust)
+- Outbound after sensitive context (ceiling + heuristics)
+- Unclassified / new tools defaulting open (fail-closed class)
+- Poisoned MCP tool definitions (schema pinning)
+- SSRF / IMDS / private hosts; hostname allowlists (no substring bypass)
+- Single-use approval resume; hold while delivery uncertain
+
+### Still limited (honest gaps)
+
+- Not full data-lineage / per-field taint through LLM transforms
+- Not multi-agent spawn manifests (design only — child ⊂ parent)
+- Not multi-instance shared session/approval state (in-memory)
+- Not byte-level budgets; not enterprise HA / SSO
+- Heuristic policy — tune thresholds; it will not catch everything
+- Default `AEGOTRAX_REQUIRE_API_KEY=false` is pilot-only — turn on for any shared host
 
 ---
 
 ## Security notes
 
-This is a **local pilot / sandbox** runtime — not a full enterprise control plane.
+This is a **local pilot / sandbox** runtime — not a production enterprise control plane.
 
-1. Do not expose port 8000 to the internet without a strong API key.
-2. Default gateway mode is `simulate`.
-3. Policy is heuristic — tune `policy.yaml` for your tools.
-4. Never commit `aegotrax_audit.log`.
-5. Approval queue and sessions are in-memory.
+1. Set a strong `AEGOTRAX_API_KEY` and `AEGOTRAX_REQUIRE_API_KEY=1` before shared use.
+2. Do not expose port 8000 to the internet without auth + network ACL.
+3. Default MCP gateway mode is `simulate`.
+4. Never commit audit logs.
+5. Approval queue and sessions are **in-memory** (cleared on restart).
+6. Envelope must be registered by the **host** on `/session`, not by the model.
 
 ---
 
 ## Support
 
-If Aegotrax helped you evaluate agent tool-call risk, a GitHub star helps others discover the pilot:
+If Aegotrax helped, a GitHub star helps others find the pilot:
 
 ⭐ **https://github.com/aegotrax-dev/aegotrax**
 

@@ -46,6 +46,8 @@ class PendingApproval:
     decided_at: Optional[float] = None
     decided_by: Optional[str] = None
     expires_at: float = 0.0
+    # After consume: unknown | delivered | delivery_uncertain | failed
+    delivery_status: Optional[str] = None
 
     def to_public_dict(self) -> Dict[str, Any]:
         return {
@@ -62,6 +64,7 @@ class PendingApproval:
             "decided_at": self.decided_at,
             "decided_by": self.decided_by,
             "expires_at": self.expires_at,
+            "delivery_status": self.delivery_status,
         }
 
 
@@ -201,6 +204,8 @@ class ApprovalQueue:
 
         item.status = "consumed"
         item.decided_at = item.decided_at or time.time()
+        if getattr(item, "delivery_status", None) is None:
+            item.delivery_status = "unknown"
         return None  # success — caller should ALLOW
 
     def list_pending(self, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -215,5 +220,37 @@ class ApprovalQueue:
         return out
 
 
+    def mark_delivery(self, approval_id: str, status: str):
+        """Record downstream delivery outcome after ALLOW+consume.
+
+        status: delivered | delivery_uncertain | failed
+        Returns (item, error_string).
+        """
+        self._purge()
+        status = (status or "").strip().lower()
+        if status not in ("delivered", "delivery_uncertain", "failed"):
+            return None, "invalid delivery status"
+        item = self._items.get(approval_id)
+        if item is None:
+            return None, "unknown approval_id"
+        if item.status != "consumed":
+            return None, f"delivery only applies after consume (status={item.status})"
+        item.delivery_status = status
+        return item, None
+
+    def uncertain_fingerprint(self, fingerprint: str):
+        """Return a consumed item with delivery_uncertain/unknown for this call fingerprint."""
+        self._purge()
+        for item in self._items.values():
+            if item.fingerprint != fingerprint:
+                continue
+            if item.status != "consumed":
+                continue
+            if item.delivery_status in ("delivery_uncertain", "unknown"):
+                return item
+        return None
+
+
 # Module-level queue; TTL overridden from settings at engine import time.
 approval_queue = ApprovalQueue(ttl_seconds=1800)
+

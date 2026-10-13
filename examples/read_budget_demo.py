@@ -1,4 +1,4 @@
-"""Demo: cumulative read budgets on sensitive tools — 0.2.5.
+"""Demo: cumulative read budgets on sensitive tools — 0.2.6.
 
 Requires engine on 127.0.0.1:8000.
 
@@ -29,8 +29,7 @@ def main() -> None:
         api_key=API_KEY,
     )
 
-    # policy default for read_document max_calls=15; use read_db max_calls=10
-    # Force a low limit by repeating until exceed — default read_db is 10.
+    # policy: read_db max_calls=10 → call 11 exceeds
     last = None
     for i in range(1, 12):
         last = verify_tool_call(
@@ -47,9 +46,23 @@ def main() -> None:
     assert last["decision"] in ("REQUIRE_APPROVAL", "BLOCK"), last
     assert "read_budget" in (last.get("matched_policies") or [])
 
+    # 0.2.6: further calls blocked — session closed after budget exceed
+    closed = verify_tool_call(
+        session_id="sess-budget",
+        agent_id="demo",
+        tool="read_db",
+        arguments={"query": "after-exhaust"},
+        api_key=API_KEY,
+    )
+    print(
+        "after exceed:",
+        closed["decision"],
+        "policies=",
+        closed.get("matched_policies"),
+    )
+    assert closed["decision"] == "BLOCK"
+    assert "session_exhausted" in (closed.get("matched_policies") or [])
+
     print("\n✅ Read budget demo OK")
-    print("\n⭐ If this was useful, a GitHub star helps others find the project:\nhttps://github.com/aegotrax-dev/aegotrax")
-
-
 if __name__ == "__main__":
     main()

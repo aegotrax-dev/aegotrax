@@ -1,7 +1,7 @@
 {
   "name": "aegotrax",
-  "version": "0.2.5",
-  "description": "Runtime protection for AI agents — checks tool calls before they run (session intent, approval queue, audit stream).",
+  "version": "0.2.6",
+  "description": "Runtime protection for AI agents — session envelope, budgets, sensitivity ceiling, tool risk classes, approval delivery tracking.",
   "author": {
     "name": "aegotrax-dev",
     "url": "https://github.com/aegotrax-dev"
@@ -11,8 +11,23 @@
   "homepage": "https://aegotrax.com",
   "documentation": "https://github.com/aegotrax-dev/aegotrax#readme",
   "bugs": "https://github.com/aegotrax-dev/aegotrax/issues",
-  "keywords": ["security", "ai-agents", "mcp", "guardrails", "runtime", "tool-calls"],
-  "categories": ["security", "developer-tools"],
-  "tags": ["mcp", "gateway", "policy", "audit"],
+  "keywords": [
+    "security",
+    "ai-agents",
+    "mcp",
+    "guardrails",
+    "runtime",
+    "tool-calls"
+  ],
+  "categories": [
+    "security",
+    "developer-tools"
+  ],
+  "tags": [
+    "mcp",
+    "gateway",
+    "policy",
+    "audit"
+  ],
   "main": "aegotrax"
 }
