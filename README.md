@@ -154,6 +154,8 @@ If Aegotrax helped, a GitHub star helps others find the pilot:
 
 ⭐ **https://github.com/aegotrax-dev/aegotrax**
 
+[![HOL Guard](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Daegotrax-dev%252Faegotrax%26metric%3Dtrust)](https://hol.org/registry/plugins/aegotrax-dev%2Faegotrax)
+
 Issues and break reports are equally welcome.
 
 ---
