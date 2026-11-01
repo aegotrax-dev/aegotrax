@@ -9,6 +9,9 @@
   "license": "Apache-2.0",
   "repository": "https://github.com/aegotrax-dev/aegotrax",
   "homepage": "https://aegotrax.com",
+  "websiteURL": "https://aegotrax.com",
+  "privacyPolicyURL": "https://aegotrax.com/privacy",
+  "termsOfServiceURL": "https://aegotrax.com/terms",
   "documentation": "https://github.com/aegotrax-dev/aegotrax#readme",
   "bugs": "https://github.com/aegotrax-dev/aegotrax/issues",
   "keywords": [
