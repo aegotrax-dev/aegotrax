@@ -48,8 +48,8 @@ source .venv/bin/activate
 pip install .
 
 # The engine refuses to start without a key (secure by default). Generate one:
-export AEGOTRAX_API_KEY="$(python -c 'import secrets;print(secrets.token_urlsafe(32))')"
-# Windows (PowerShell): $env:AEGOTRAX_API_KEY = python -c "import secrets;print(secrets.token_urlsafe(32))"
+export AEGOTRAX_API_KEY="your-strong-api-key-here"
+# Windows (PowerShell): $env:AEGOTRAX_API_KEY = "your-strong-api-key-here"
 aegotrax-engine
 # other terminal:
 curl -s http://127.0.0.1:8000/health   # → version 0.2.7
@@ -59,7 +59,7 @@ python examples/sdk_pilot_example.py
 Docker:
 
 ```bash
-export AEGOTRAX_API_KEY="$(python -c 'import secrets;print(secrets.token_urlsafe(32))')"
+export AEGOTRAX_API_KEY="your-strong-api-key-here"
 docker compose up --build        # compose fails fast if the key is missing
 ```
 

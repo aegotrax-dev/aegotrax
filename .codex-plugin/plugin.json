@@ -1,7 +1,7 @@
 {
   "name": "aegotrax",
-  "version": "0.2.6",
-  "description": "Runtime protection for AI agents — session envelope, budgets, sensitivity ceiling, tool risk classes, approval delivery tracking.",
+  "version": "0.2.7",
+  "description": "Runtime protection for AI agents \u2014 session envelope, budgets, sensitivity ceiling, tool risk classes, approval delivery tracking.",
   "author": {
     "name": "aegotrax-dev",
     "url": "https://github.com/aegotrax-dev"
@@ -29,5 +29,20 @@
     "policy",
     "audit"
   ],
-  "main": "aegotrax"
+  "main": "aegotrax",
+  "websiteURL": "https://aegotrax.com",
+  "privacyPolicyURL": "https://aegotrax.com/privacy.html",
+  "termsOfServiceURL": "https://aegotrax.com/terms.html",
+  "interface": {
+    "displayName": "Aegotrax",
+    "developerName": "aegotrax-dev",
+    "shortDescription": "Runtime tool-call gate for AI agents",
+    "longDescription": "Intercepts AI agent tool calls before they run. Enforces session intent, read budgets, sensitivity ceiling, and human approval.",
+    "category": "security",
+    "capabilities": [
+      "tool-call-interception",
+      "policy-enforcement",
+      "audit-log"
+    ]
+  }
 }
