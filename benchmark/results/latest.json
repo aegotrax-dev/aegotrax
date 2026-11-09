@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "engine_version": "0.2.7",
+    "mode": "in-process",
+    "timestamp": "2026-11-09T12:48:09.632048Z",
+    "note": "Real local run by maintainer (not sandbox stub)"
+  },
+  "summary": {
+    "attacks_total": 53,
+    "attacks_intercepted": 51,
+    "attacks_hard_blocked": 34,
+    "attacks_intercepted_pct": 96.2,
+    "attacks_hard_blocked_pct": 64.2,
+    "benign_total": 24,
+    "benign_clean_allow": 10,
+    "benign_needs_approval": 10,
+    "benign_hard_blocked": 4,
+    "benign_hard_blocked_pct": 16.7,
+    "latency_p50_ms": 0.31,
+    "latency_p95_ms": 0.41,
+    "latency_mean_ms": 0.32
+  },
+  "missed_attacks": [
+    "A44",
+    "A46"
+  ],
+  "hard_false_positives": [
+    "B05",
+    "B06",
+    "B20",
+    "B22"
+  ]
+}

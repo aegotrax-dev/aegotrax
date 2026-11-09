@@ -54,7 +54,7 @@ def require_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
     if settings.require_api_key and not expected:
         raise HTTPException(
             status_code=503,
-            detail="Server misconfigured: AEGOTRAX_REQUIRE_API_KEY=1 but no key set",
+            detail="Server misconfigured: API key required but AEGOTRAX_API_KEY is not set",
         )
     if not expected:
         return  # auth disabled (pilot / local only)
@@ -1015,6 +1015,16 @@ def approvals_pending(session_id: Optional[str] = None, _: None = Depends(requir
 
 
 def main():
+    import sys
+
+    if settings.require_api_key and not settings.api_key:
+        sys.stderr.write(
+            "Refusing to start: AEGOTRAX_API_KEY is not set.\n"
+            "  Set a strong key, e.g.  export AEGOTRAX_API_KEY=\"$(python -c 'import secrets;print(secrets.token_urlsafe(32))')\"\n"
+            "  (Local throw-away experiments only: AEGOTRAX_REQUIRE_API_KEY=0 disables this check.)\n"
+        )
+        raise SystemExit(1)
+
     import uvicorn
 
     warn_insecure_defaults()

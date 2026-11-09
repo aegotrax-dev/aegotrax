@@ -35,9 +35,11 @@ class Settings:
     port: int = int(_env("AEGOTRAX_PORT", "8000") or "8000")
 
     # Auth between clients (gateway/SDK) and engine
-    # If AEGOTRAX_REQUIRE_API_KEY=true (default in hardened mode), missing key → refuse to start decisions
+    # Secure by default: the engine refuses to start without AEGOTRAX_API_KEY.
+    # For throw-away local experiments only, opt out explicitly with
+    # AEGOTRAX_REQUIRE_API_KEY=0 (never on a shared host).
     api_key: Optional[str] = _env("AEGOTRAX_API_KEY")
-    require_api_key: bool = _env_bool("AEGOTRAX_REQUIRE_API_KEY", False)
+    require_api_key: bool = _env_bool("AEGOTRAX_REQUIRE_API_KEY", True)
 
     # URLs
     engine_url: str = _env(
@@ -89,14 +91,14 @@ settings = Settings()
 
 def warn_insecure_defaults() -> None:
     """Log warnings for insecure pilot defaults that should not ship to prod."""
-    if not settings.api_key:
+    if not settings.api_key and not settings.require_api_key:
         logger.warning(
-            "AEGOTRAX_API_KEY is not set — engine endpoints are unauthenticated. "
-            "Set AEGOTRAX_API_KEY (and AEGOTRAX_REQUIRE_API_KEY=1) before any shared deployment."
+            "AEGOTRAX_REQUIRE_API_KEY=0 and no AEGOTRAX_API_KEY — engine endpoints are "
+            "UNAUTHENTICATED. Local experiments only; never use on a shared host."
         )
     if settings.require_api_key and not settings.api_key:
         logger.error(
-            "AEGOTRAX_REQUIRE_API_KEY=1 but AEGOTRAX_API_KEY is empty — "
+            "AEGOTRAX_API_KEY is empty while API keys are required (the default) — "
             "all authenticated endpoints will reject requests."
         )
     if settings.host in ("0.0.0.0", "::"):

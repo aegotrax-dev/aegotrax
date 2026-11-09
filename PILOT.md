@@ -38,7 +38,7 @@ Use MCP Gateway when the agent already speaks MCP and you want a single intercep
 **Requirements:** Docker Desktop running (Windows/Mac) or Docker Engine (Linux).
 
 ```bash
-cd aegotrax_clean          # or aegotrax_pip_ready — folder with docker-compose.yml
+cd aegotrax                # repo root (contains docker-compose.yml)
 docker compose up --build
 ```
 
@@ -281,7 +281,7 @@ if drift and drift.severity == "high":
 
 ## Hardening checklist (v0.2.3)
 
-- [ ] `AEGOTRAX_API_KEY` set; prefer `AEGOTRAX_REQUIRE_API_KEY=1`
+- [ ] `AEGOTRAX_API_KEY` set (the engine refuses to start without it; do not disable `AEGOTRAX_REQUIRE_API_KEY`)
 - [ ] Confirm `AEGOTRAX_SERVER_INTENT_ONLY=true` (default) — register intent via `/session`
 - [ ] Tune `trusted_hosts` / `trusted_domains` in `policy.yaml` (hostname allowlist, not substrings)
 - [ ] Session TTL acceptable (`AEGOTRAX_SESSION_TTL`, default 3600)
