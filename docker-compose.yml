@@ -12,7 +12,7 @@ services:
       AEGOTRAX_AUDIT_LOG: "/data/aegotrax_audit.log"
       AEGOTRAX_POLICY_PATH: "/data/policy.yaml"
       # Required (secure by default). Export it in your shell or put it in an untracked .env:
-      AEGOTRAX_API_KEY: "${AEGOTRAX_API_KEY:?Set AEGOTRAX_API_KEY before running docker compose}"
+      AEGOTRAX_API_KEY: ${AEGOTRAX_API_KEY}
       # Optional audit stream (public HTTPS only; loopback/private targets rejected):
       # AEGOTRAX_AUDIT_WEBHOOK: "https://your-endpoint.example/audit"
     volumes:
