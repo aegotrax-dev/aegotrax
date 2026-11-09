@@ -18,6 +18,9 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+
+def _make_token(nbytes: int) -> str:
+    return secrets.token_urlsafe(nbytes)
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -109,8 +112,8 @@ class ApprovalQueue:
         user_intent: str,
     ) -> PendingApproval:
         self._purge()
-        approval_id = secrets.token_urlsafe(16)
-        token = secrets.token_urlsafe(24)
+        approval_id = _make_token(16)
+        token = _make_token(24)
         item = PendingApproval(
             approval_id=approval_id,
             token=token,
