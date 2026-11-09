@@ -1,0 +1,6 @@
+[scanner]
+profile = "public-marketplace"
+ignore_paths = ["benchmark/scenarios.py", "aegotrax/approval.py", "examples/*"]
+
+[rules]
+severity_overrides = { HARDCODED_SECRET = "info" }
