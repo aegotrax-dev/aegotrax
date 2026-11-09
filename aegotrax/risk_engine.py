@@ -1020,7 +1020,7 @@ def main():
     if settings.require_api_key and not settings.api_key:
         sys.stderr.write(
             "Refusing to start: AEGOTRAX_API_KEY is not set.\n"
-            "  Set a strong key, e.g.  export AEGOTRAX_API_KEY=\"$(python -c 'import secrets;print(secrets.token_urlsafe(32))')\"\n"
+            "  Set a strong key, e.g.  export AEGOTRAX_API_KEY="your-strong-api-key-here"\n"
             "  (Local throw-away experiments only: AEGOTRAX_REQUIRE_API_KEY=0 disables this check.)\n"
         )
         raise SystemExit(1)
