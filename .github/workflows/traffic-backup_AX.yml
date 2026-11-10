@@ -2,9 +2,8 @@ name: GitHub Traffic Stats Backup
 
 on:
   schedule:
-    # Run daily at 00:00 UTC
     - cron: '0 0 * * *'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   backup:
@@ -20,29 +19,66 @@ jobs:
           mkdir -p traffic-data
           DATE=$(date +%Y-%m-%d)
           
-          # Clones
           curl -s -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/traffic/clones \
             > traffic-data/clones-$DATE.json
           
-          # Views
           curl -s -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/traffic/views \
             > traffic-data/views-$DATE.json
           
-          # Referrers
           curl -s -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/traffic/popular/referrers \
             > traffic-data/referrers-$DATE.json
           
-          # Paths
           curl -s -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/traffic/popular/paths \
             > traffic-data/paths-$DATE.json
+
+      - name: Update lifetime summary
+        run: |
+          python3 << 'PY'
+          import json, glob, os
+          from datetime import datetime
+          
+          total_clones = 0
+          total_unique_clones = 0
+          total_views = 0
+          total_unique_views = 0
+          
+          for f in glob.glob("traffic-data/clones-*.json"):
+              try:
+                  with open(f) as fp:
+                      data = json.load(fp)
+                      total_clones += data.get("count", 0)
+                      total_unique_clones += data.get("uniques", 0)
+              except: pass
+          
+          for f in glob.glob("traffic-data/views-*.json"):
+              try:
+                  with open(f) as fp:
+                      data = json.load(fp)
+                      total_views += data.get("count", 0)
+                      total_unique_views += data.get("uniques", 0)
+              except: pass
+          
+          summary = {
+              "last_updated": datetime.utcnow().isoformat() + "Z",
+              "total_clones": total_clones,
+              "total_unique_clones": total_unique_clones,
+              "total_views": total_views,
+              "total_unique_views": total_unique_views,
+              "note": "Sum of all daily backups. Unique counts may overcount across days."
+          }
+          
+          with open("traffic-data/lifetime.json", "w") as fp:
+              json.dump(summary, fp, indent=2)
+          print("Lifetime summary updated")
+          PY
 
       - name: Commit traffic data
         run: |
