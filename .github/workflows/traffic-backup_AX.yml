@@ -1,0 +1,53 @@
+name: GitHub Traffic Stats Backup
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch traffic data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p traffic-data
+          DATE=$(date +%Y-%m-%d)
+          
+          # Clones
+          curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/traffic/clones \
+            > traffic-data/clones-$DATE.json
+          
+          # Views
+          curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/traffic/views \
+            > traffic-data/views-$DATE.json
+          
+          # Referrers
+          curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/traffic/popular/referrers \
+            > traffic-data/referrers-$DATE.json
+          
+          # Paths
+          curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/traffic/popular/paths \
+            > traffic-data/paths-$DATE.json
+
+      - name: Commit traffic data
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add traffic-data/
+          git diff --staged --quiet || git commit -m "chore: backup traffic data $(date +%Y-%m-%d)"
+          git push
