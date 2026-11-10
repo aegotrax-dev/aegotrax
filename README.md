@@ -192,7 +192,7 @@ If Aegotrax helped, a GitHub star helps others find the pilot:
 
 ⭐ **https://github.com/aegotrax-dev/aegotrax**
 
-[![HOL Registry](https://img.shields.io/badge/HOL-Trust%20Score-blue)](https://hol.org/registry/plugins/aegotrax-dev%2Faegotrax)
+[![HOL Trust Score](https://img.shields.io/badge/HOL%20Trust%20Score-93-brightgreen)](https://hol.org/registry/plugins/aegotrax-dev%2Faegotrax)
 
 Issues and break reports are equally welcome.
 
