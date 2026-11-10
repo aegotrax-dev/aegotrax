@@ -15,7 +15,7 @@ jobs:
 
       - name: Fetch traffic data
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
         run: |
           mkdir -p traffic-data
           DATE=$(date +%Y-%m-%d)
