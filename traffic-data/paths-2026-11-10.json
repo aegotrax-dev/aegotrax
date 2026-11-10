@@ -1,5 +1,26 @@
-{
-  "message": "Resource not accessible by integration",
-  "documentation_url": "https://docs.github.com/rest/metrics/traffic#get-top-referral-paths",
-  "status": "403"
-}
+[
+  {
+    "path": "/aegotrax-dev/aegotrax",
+    "title": "Overview",
+    "count": 25,
+    "uniques": 15
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/actions/runs/42620515326",
+    "title": "/actions/runs/42620515326",
+    "count": 2,
+    "uniques": 2
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/actions/runs/42620515326/job/129171126719",
+    "title": "/actions/runs/42620515326/job/129171126719",
+    "count": 2,
+    "uniques": 2
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/pulse",
+    "title": "/pulse",
+    "count": 1,
+    "uniques": 1
+  }
+]
