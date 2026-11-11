@@ -59,7 +59,7 @@ def verify_tool_call(
     timeout: Optional[float] = None,
     raise_on_block: bool = False,
     approval_id: Optional[str] = None,
-    approval_token: Optional[str] = None,
+    approval_token: Optional[str] = None,  # deprecated, ignored (0.2.8)
     user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
@@ -72,6 +72,16 @@ def verify_tool_call(
           "reasons": [str],
           "attack_path": str,
         }
+
+    Approval resume: after a human approver has decided (out-of-band, with the approver
+    credential), repeat the SAME call with `approval_id=<id from the earlier response>`.
+    `approval_token` is no longer used — the engine never hands the agent a secret that
+    could be used to approve.
+
+    Shadow mode (AEGOTRAX_ENFORCEMENT=shadow on the engine): `decision` is always
+    "ALLOW" and the response carries `shadow: True` and `would_decide` with what the
+    policy would have done. In shadow mode this function never fails closed, so a
+    shadow deployment cannot break the agent.
     """
     url = engine_url or settings.engine_url
     key = api_key if api_key is not None else settings.api_key
@@ -87,8 +97,6 @@ def verify_tool_call(
     }
     if approval_id:
         payload["approval_id"] = approval_id
-    if approval_token:
-        payload["approval_token"] = approval_token
     if user_id:
         payload["user_id"] = user_id
 
@@ -101,7 +109,8 @@ def verify_tool_call(
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        if settings.fail_closed:
+        # Shadow mode must never break the host application, so it always fails open.
+        if settings.fail_closed and settings.enforcement != "shadow":
             data = {
                 "decision": "BLOCK",
                 "risk_score": 100,
@@ -125,6 +134,36 @@ def verify_tool_call(
         )
 
     return data
+
+
+def report_delivery(
+    approval_id: str,
+    status: str,
+    *,
+    engine_base: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> dict:
+    """Tell the engine what happened after an approved call was released.
+
+    status: "delivered" | "delivery_uncertain" | "failed".
+
+    Until delivery is reported, the engine holds new permits for the same tool+arguments
+    (so a timeout cannot silently turn into a second, duplicate side effect).
+    Call this after you executed (or tried to execute) the approved action.
+    """
+    base = engine_base or settings.engine_base
+    key = api_key if api_key is not None else settings.api_key
+    headers = {}
+    if key:
+        headers["X-API-Key"] = key
+    resp = requests.post(
+        f"{base.rstrip('/')}/approval/delivery",
+        json={"approval_id": approval_id, "status": status},
+        headers=headers,
+        timeout=settings.engine_timeout,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 def set_session_context(

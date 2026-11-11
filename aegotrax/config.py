@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import Dict, Optional
 
 from dotenv import load_dotenv
 
@@ -27,6 +27,40 @@ def _env_bool(key: str, default: bool = False) -> bool:
     return val.lower() in ("1", "true", "yes", "on")
 
 
+def _parse_approver_keys(raw: Optional[str], single: Optional[str]) -> Dict[str, str]:
+    """Approver credentials: name -> key.
+
+    AEGOTRAX_APPROVER_KEY  = one shared approver key (identity name: "approver")
+    AEGOTRAX_APPROVER_KEYS = "alice:key-a,bob:key-b" (identity name = the label before ':')
+
+    The label becomes the authenticated `decided_by` in the audit trail, so use
+    one key per human/team when you need to know who approved what.
+    """
+    keys: Dict[str, str] = {}
+    if single:
+        keys["approver"] = single
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        name, sep, key = part.partition(":")
+        name, key = name.strip(), key.strip()
+        if sep and name and key:
+            keys[name] = key
+        else:
+            logger.error("Ignoring malformed AEGOTRAX_APPROVER_KEYS entry (expected name:key)")
+    return keys
+
+
+def _enforcement_mode() -> str:
+    """enforce (default) | shadow. Anything unrecognised falls back to enforce."""
+    val = (_env("AEGOTRAX_ENFORCEMENT", "enforce") or "enforce").lower()
+    if val not in ("enforce", "shadow"):
+        logger.error("Unknown AEGOTRAX_ENFORCEMENT=%r; falling back to 'enforce'", val)
+        return "enforce"
+    return val
+
+
 class Settings:
     """Central settings for engine + gateway + SDK."""
 
@@ -40,6 +74,16 @@ class Settings:
     # AEGOTRAX_REQUIRE_API_KEY=0 (never on a shared host).
     api_key: Optional[str] = _env("AEGOTRAX_API_KEY")
     require_api_key: bool = _env_bool("AEGOTRAX_REQUIRE_API_KEY", True)
+
+    # Human approvers authenticate with a DIFFERENT credential than the agent/SDK
+    # (0.2.8). The agent's API key can never decide an approval.
+    approver_keys: Dict[str, str] = _parse_approver_keys(
+        _env("AEGOTRAX_APPROVER_KEYS"), _env("AEGOTRAX_APPROVER_KEY")
+    )
+
+    # enforce: decisions are applied.  shadow: the engine computes and audits the
+    # decision but always answers ALLOW ("this is what I would have done").
+    enforcement: str = _enforcement_mode()
 
     # URLs
     engine_url: str = _env(
@@ -100,6 +144,21 @@ def warn_insecure_defaults() -> None:
         logger.error(
             "AEGOTRAX_API_KEY is empty while API keys are required (the default) — "
             "all authenticated endpoints will reject requests."
+        )
+    if any(k == settings.api_key for k in settings.approver_keys.values()):
+        logger.error(
+            "An approver key equals AEGOTRAX_API_KEY — the agent credential could approve "
+            "its own requests. That approver entry is ignored; use a different key."
+        )
+    if settings.enforcement == "enforce" and not settings.approver_keys:
+        logger.warning(
+            "No approver credential configured (AEGOTRAX_APPROVER_KEY) — REQUIRE_APPROVAL "
+            "decisions cannot be approved and will stay blocked."
+        )
+    if settings.enforcement == "shadow":
+        logger.warning(
+            "AEGOTRAX_ENFORCEMENT=shadow — decisions are logged but NOT enforced. "
+            "Do not rely on this instance for protection."
         )
     if settings.host in ("0.0.0.0", "::"):
         logger.warning(

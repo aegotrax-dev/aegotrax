@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aegotrax"
-version = "0.2.7"
+version = "0.2.8"
 description = "Runtime security gateway for AI agents (MCP + Python SDK)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,13 +15,17 @@ dependencies = [
   "fastapi>=0.100.0",
   "uvicorn>=0.20.0",
   "pydantic>=2.0.0",
-  "mcp>=1.0.0",
+  "mcp>=1.0.0,<2",  # mcp 2.x renamed FastMCP; the gateway targets 1.x
   "requests>=2.28.0",
   "pyyaml>=6.0",
   "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
+test = [
+  "pytest>=7.0",
+  "httpx>=0.24",
+]
 demo = [
   "langchain-openai>=0.1.0",
   "langgraph>=0.2.0",
@@ -31,6 +35,7 @@ demo = [
 [project.scripts]
 aegotrax-engine = "aegotrax.risk_engine:main"
 aegotrax-gateway = "aegotrax.mcp_gateway:main"
+aegotrax-shadow-report = "aegotrax.shadow_report:main"
 
 [project.urls]
 Homepage = "https://aegotrax.com"
@@ -44,3 +49,6 @@ include = ["aegotrax*"]
 
 [tool.setuptools.package-data]
 aegotrax = ["policy.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -11,8 +11,15 @@ services:
       AEGOTRAX_PORT: "8000"
       AEGOTRAX_AUDIT_LOG: "/data/aegotrax_audit.log"
       AEGOTRAX_POLICY_PATH: "/data/policy.yaml"
-      # Required (secure by default). Export it in your shell or put it in an untracked .env:
-      AEGOTRAX_API_KEY: ${AEGOTRAX_API_KEY}
+      # Required (secure by default). Export it in your shell or put it in an untracked .env.
+      # `:?` makes `docker compose up` fail immediately if it is missing.
+      AEGOTRAX_API_KEY: ${AEGOTRAX_API_KEY:?set AEGOTRAX_API_KEY}
+      # Human approvers use their OWN credential (must differ from AEGOTRAX_API_KEY).
+      # Leave empty to run without approvals: REQUIRE_APPROVAL then stays blocked.
+      # Several approvers: AEGOTRAX_APPROVER_KEYS="alice:key-a,bob:key-b"
+      AEGOTRAX_APPROVER_KEY: ${AEGOTRAX_APPROVER_KEY:-}
+      # enforce (default) | shadow = log what would be blocked, never block
+      AEGOTRAX_ENFORCEMENT: ${AEGOTRAX_ENFORCEMENT:-enforce}
       # Optional audit stream (public HTTPS only; loopback/private targets rejected):
       # AEGOTRAX_AUDIT_WEBHOOK: "https://your-endpoint.example/audit"
     volumes:

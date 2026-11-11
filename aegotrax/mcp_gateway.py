@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import requests
 from mcp.server.fastmcp import FastMCP
 
+from .approval import call_fingerprint
 from .config import settings
 from .schema_pinning import (
     CANONICAL_SCHEMAS,
@@ -29,6 +31,41 @@ from .schema_pinning import (
 logger = logging.getLogger("aegotrax.mcp_gateway")
 
 mcp = FastMCP("Aegotrax-Gateway")
+
+# approval_id handles, kept HERE (host side) and never shown to the LLM. When the model
+# retries the identical call after a human approved it, the gateway attaches the
+# approval_id itself. The approval_id is not a secret that can approve anything: deciding
+# needs the approver credential, which this process does not have.
+_APPROVAL_HANDLES: "OrderedDict[str, str]" = OrderedDict()
+_MAX_APPROVAL_HANDLES = 1000
+
+
+def _handle_key(session_id: str, tool_name: str, arguments: Dict[str, Any]) -> str:
+    return f"{session_id}|{call_fingerprint(tool_name, arguments)}"
+
+
+def _remember_handle(key: str, approval_id: str) -> None:
+    _APPROVAL_HANDLES[key] = approval_id
+    _APPROVAL_HANDLES.move_to_end(key)
+    while len(_APPROVAL_HANDLES) > _MAX_APPROVAL_HANDLES:
+        _APPROVAL_HANDLES.popitem(last=False)
+
+
+def _report_delivery(approval_id: str, result: str) -> None:
+    """Best effort: tell the engine the approved call ran, so it stops holding the same
+    tool+args. A failure here must never change what the agent sees."""
+    try:
+        headers = {"X-API-Key": settings.api_key} if settings.api_key else {}
+        base = settings.engine_url.rsplit("/", 1)[0]
+        status = "failed" if "❌" in result else "delivered"
+        requests.post(
+            f"{base}/approval/delivery",
+            json={"approval_id": approval_id, "status": status},
+            headers=headers,
+            timeout=settings.engine_timeout,
+        )
+    except Exception as e:  # pragma: no cover - best effort
+        logger.warning("Could not report approval delivery: %s", e)
 
 # Pin all canonical tool schemas at import / startup time.
 _PIN_COUNT = default_registry.pin_canonical()
@@ -124,10 +161,16 @@ def _check_schema_drift(tool_name: str) -> Optional[DriftEvent]:
 
 def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
     ctx = get_current_session_context()
+    shadow = settings.enforcement == "shadow"
+    session_id = ctx.get("session_id", "default-mcp-session")
+    handle_key = _handle_key(session_id, tool_name, arguments)
+    used_handle = _APPROVAL_HANDLES.get(handle_key)
 
     # --- Schema pinning / drift gate (runs before the risk engine) ---
+    # In shadow mode the gateway does not block on its own; the drift is forwarded to
+    # the engine, which reports what it would have done.
     drift = _check_schema_drift(tool_name)
-    if drift is not None and drift.severity == "high":
+    if drift is not None and drift.severity == "high" and not shadow:
         reasons_str = "; ".join(drift.differences)
         return (
             f"🚨 [Aegotrax] ACTION BLOCKED — SCHEMA DRIFT\n"
@@ -139,7 +182,7 @@ def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
         )
 
     payload = {
-        "session_id": ctx.get("session_id", "default-mcp-session"),
+        "session_id": session_id,
         "agent_id": ctx.get("agent_id", "langgraph-agent"),
         "user_intent": ctx.get("user_intent", "Execute user request"),
         "tool": tool_name,
@@ -149,6 +192,8 @@ def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
     # Surface medium/low drift to the engine as extra context (pilot)
     if drift is not None:
         payload["schema_drift"] = drift.to_dict()
+    if used_handle:
+        payload["approval_id"] = used_handle
 
     headers = {}
     if settings.api_key:
@@ -166,14 +211,29 @@ def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
         risk_score = res_data.get("risk_score", 0)
         reasons = res_data.get("reasons", [])
         approval_id = res_data.get("approval_id")
-        approval_token = res_data.get("approval_token")
         approval_expires_at = res_data.get("approval_expires_at")
+        if res_data.get("shadow") and res_data.get("would_decide") not in (None, "ALLOW"):
+            logger.info(
+                "[shadow] would %s %s (risk %s): %s",
+                res_data.get("would_decide"), tool_name, risk_score, "; ".join(reasons),
+            )
     except Exception as e:
-        if settings.fail_closed:
+        # Shadow mode must never break the agent, so it always fails open.
+        if settings.fail_closed and not shadow:
             decision, risk_score, reasons = "BLOCK", 100, [f"Gateway Error: {str(e)}"]
         else:
             decision, risk_score, reasons = "ALLOW", 0, [f"Gateway Error (fail-open): {str(e)}"]
-        approval_id = approval_token = approval_expires_at = None
+        approval_id = approval_expires_at = None
+        used_handle = None
+
+    # Keep the handle while the approval is pending; drop it once the call was released,
+    # denied, expired or otherwise rejected.
+    if decision == "REQUIRE_APPROVAL" and approval_id:
+        _remember_handle(handle_key, approval_id)
+    elif used_handle:
+        _APPROVAL_HANDLES.pop(handle_key, None)
+    if decision != "ALLOW":
+        used_handle = None
 
     if decision == "BLOCK":
         reasons_str = "; ".join(reasons) if reasons else "High risk detected"
@@ -186,8 +246,9 @@ def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
 
     if decision == "REQUIRE_APPROVAL":
         reasons_str = "; ".join(reasons) if reasons else "Manual approval required"
-        # Hard gate: never execute until human approves via /approval/decide, then
-        # re-submit the same call with approval_id + approval_token.
+        # Hard gate: never execute until a human approver decides (approver credential,
+        # out-of-band). The model then simply repeats the same call; the gateway
+        # attaches the approval_id it remembered. No secret is shown to the model.
         lines = [
             "⏸️ [Aegotrax] APPROVAL REQUIRED — ACTION NOT EXECUTED",
             f"Tool: {tool_name}",
@@ -197,12 +258,12 @@ def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
         ]
         if approval_id:
             lines.append(f"approval_id: {approval_id}")
-            lines.append(f"approval_token: {approval_token}")
             if approval_expires_at:
                 lines.append(f"approval_expires_at: {approval_expires_at}")
             lines.append(
-                "Next: POST /approval/decide {approval_id, token, decision:approve|deny} "
-                "then re-call the tool with the same approval_id + approval_token."
+                "Next: a human approver must decide this out-of-band "
+                "(POST /approval/decide with the approver credential). "
+                "After approval, repeat this exact call and it will be released once."
             )
         else:
             lines.append(
@@ -210,6 +271,13 @@ def verify_and_forward(tool_name: str, arguments: Dict[str, Any]) -> str:
             )
         return "\n".join(lines)
 
+    result = _execute(tool_name, arguments, risk_score)
+    if used_handle:
+        _report_delivery(used_handle, result)
+    return result
+
+
+def _execute(tool_name: str, arguments: Dict[str, Any], risk_score: Any) -> str:
     mode = settings.mode
 
     if mode == "echo":

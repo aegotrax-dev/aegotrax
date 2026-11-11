@@ -1,14 +1,20 @@
 """Human-approval queue for REQUIRE_APPROVAL decisions.
 
-Flow
-----
+Flow (0.2.8)
+------------
 1. evaluate() decides REQUIRE_APPROVAL
-2. create_pending() stores the call fingerprint + secrets.token
-3. Response returns approval_id + approval_token (status=pending)
-4. Human / webhook calls POST /approval/decide {approve|deny}
-5. Client re-submits the same tool call with approval_id + approval_token
-6. If approved and fingerprint matches → treated as ALLOW for that one call
-   (single-use; token is consumed)
+2. create() stores the call fingerprint and returns an unguessable approval_id
+3. The agent/SDK only ever receives approval_id (status=pending) — never a secret
+   that could be used to decide
+4. A human approver calls POST /approval/decide {approval_id, approve|deny}
+   authenticated with an APPROVER credential (X-Approver-Key), which is different
+   from the agent's API key. `decided_by` is the authenticated approver identity.
+5. The client re-submits the same tool call with approval_id
+6. If approved, same session and fingerprint matches → treated as ALLOW for that
+   one call (single-use; the approval is consumed)
+
+Deciding is authorised at the HTTP layer (see risk_engine.require_approver); this
+queue deliberately has no notion of an agent-side secret.
 
 This is an in-memory pilot queue — restart clears pending items.
 """
@@ -35,7 +41,6 @@ def call_fingerprint(tool: str, arguments: Dict[str, Any]) -> str:
 @dataclass
 class PendingApproval:
     approval_id: str
-    token: str
     session_id: str
     agent_id: str
     tool: str
@@ -113,10 +118,8 @@ class ApprovalQueue:
     ) -> PendingApproval:
         self._purge()
         approval_id = _make_token(16)
-        token = _make_token(24)
         item = PendingApproval(
             approval_id=approval_id,
-            token=token,
             session_id=session_id,
             agent_id=agent_id,
             tool=tool,
@@ -142,14 +145,13 @@ class ApprovalQueue:
         approval_id: str,
         *,
         decision: str,
-        token: str,
-        decided_by: str = "human",
+        decided_by: str,
     ) -> PendingApproval:
+        """Record a human decision. `decided_by` must be the *authenticated* approver
+        identity supplied by the HTTP layer, never a client-supplied string."""
         item = self.get(approval_id)
         if item is None:
             raise KeyError("approval not found")
-        if not secrets.compare_digest(item.token, token):
-            raise PermissionError("invalid approval token")
         if item.status != "pending":
             raise ValueError(f"approval already in status={item.status}")
         if time.time() > item.expires_at:
@@ -172,7 +174,6 @@ class ApprovalQueue:
         self,
         *,
         approval_id: str,
-        token: str,
         tool: str,
         arguments: Dict[str, Any],
         session_id: str,
@@ -181,15 +182,12 @@ class ApprovalQueue:
         If this call is covered by an approved, unexpired, matching pending item,
         mark it consumed and return None (meaning: treat as ALLOW).
 
-        Returns an error string if the token was supplied but is not valid for ALLOW.
-        Returns None if no approval_id was meant to short-circuit (caller should
-        only call this when approval_id is present).
+        Returns an error string if the approval is not valid for ALLOW.
+        The caller should only call this when approval_id is present.
         """
         item = self.get(approval_id)
         if item is None:
             return "approval_id not found or expired"
-        if not secrets.compare_digest(item.token, token):
-            return "invalid approval token"
         if item.session_id != session_id:
             return "approval session_id mismatch"
         if item.status == "denied":
@@ -197,7 +195,7 @@ class ApprovalQueue:
         if item.status == "expired":
             return "approval expired"
         if item.status == "consumed":
-            return "approval token already consumed (single-use)"
+            return "approval already consumed (single-use)"
         if item.status != "approved":
             return f"approval still pending (status={item.status})"
 

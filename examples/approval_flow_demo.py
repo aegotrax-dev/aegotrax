@@ -1,10 +1,16 @@
-"""Demo: real REQUIRE_APPROVAL queue (token + decide + resume).
+"""Demo: human approval with a separate approver credential (0.2.8).
 
-Requires a running engine on 127.0.0.1:8000.
+The agent can ask for approval but can never grant it: deciding needs the APPROVER key,
+which the agent/SDK process does not hold.
 
-    set AEGOTRAX_API_KEY=<your-api-key>
+    # terminal 1 (engine) — two DIFFERENT secrets
+    set AEGOTRAX_API_KEY=<agent-key>
+    set AEGOTRAX_APPROVER_KEY=<approver-key>
     aegotrax-engine
 
+    # terminal 2
+    set AEGOTRAX_API_KEY=<agent-key>
+    set AEGOTRAX_APPROVER_KEY=<approver-key>     # only so this demo can play the human
     python examples/approval_flow_demo.py
 """
 
@@ -17,115 +23,71 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import requests
-from aegotrax import set_session_context, verify_tool_call
+from aegotrax import report_delivery, set_session_context, verify_tool_call
 
 API_KEY = os.environ.get("AEGOTRAX_API_KEY") or ""
-if not API_KEY:
-    raise SystemExit("Set AEGOTRAX_API_KEY before running this demo")
+APPROVER_KEY = os.environ.get("AEGOTRAX_APPROVER_KEY") or ""
+if not API_KEY or not APPROVER_KEY:
+    raise SystemExit("Set AEGOTRAX_API_KEY and AEGOTRAX_APPROVER_KEY (two different values)")
 BASE = os.environ.get("AEGOTRAX_ENGINE_BASE", "http://127.0.0.1:8000")
-HEADERS = {"X-API-Key": API_KEY}
+
+SESSION = "sess-approval"
+CALL = dict(
+    session_id=SESSION,
+    agent_id="demo",
+    tool="send_email",
+    arguments={"to": "contact@vendor-example.com", "body": "Meeting invite for Tuesday 10:00"},
+)
+
+
+def decide(approval_id: str, decision: str, key: str, header: str) -> requests.Response:
+    return requests.post(
+        f"{BASE}/approval/decide",
+        json={"approval_id": approval_id, "decision": decision},
+        headers={header: key},
+        timeout=10,
+    )
 
 
 def main() -> None:
     set_session_context(
-        "sess-approval",
-        user_intent="Draft a reply only — do not send email",
+        SESSION,
+        user_intent="Send the meeting invite to our vendor contact",
         agent_id="demo",
         api_key=API_KEY,
     )
 
-    # Force mid-risk: untrusted outbound after no sensitive read → score ~25
-    # Lower block threshold isn't needed; use always_require path by picking
-    # a score band. Easiest: use send_email outside trusted domain → +70 BLOCK.
-    # For REQUIRE_APPROVAL we need score in [50, 70).
-    # Policy block=70, approval=50. Untrusted outbound alone is +25.
-    # Add schema_drift medium? Simpler: temporarily we just call with
-    # outbound untrusted + restrictive intent → 70+ → BLOCK.
-    # So use a non-restrictive intent session for approval demo:
+    # 1. An email outside trusted_domains needs a human. The agent gets an approval_id only.
+    first = verify_tool_call(**CALL, api_key=API_KEY)
+    print("1. first call        :", first["decision"], "| approval_id:", first.get("approval_id"))
+    print("   secret in response:", "approval_token" in first)
+    if first["decision"] != "REQUIRE_APPROVAL":
+        raise SystemExit("expected REQUIRE_APPROVAL (is the policy customised?)")
+    aid = first["approval_id"]
 
-    set_session_context(
-        "sess-approval",
-        user_intent="Help process outbound notifications",
-        agent_id="demo",
-        api_key=API_KEY,
-    )
+    # 2. The agent tries to approve itself with the only credential it has.
+    r = decide(aid, "approve", API_KEY, "X-Approver-Key")
+    print("2. agent self-approve:", r.status_code, "(expected 401)")
+    r = decide(aid, "approve", API_KEY, "X-API-Key")
+    print("   with X-API-Key    :", r.status_code, "(expected 401)")
 
-    # Score: untrusted outbound +25. Not enough for approval.
-    # Use execute_script without dangerous keywords → low score.
-    # Put tool on always_require via direct engine call with high-ish score:
-    # We'll call send_email to untrusted → +70 = BLOCK.
-    # Alternative: craft arguments that hit approval band only.
-    # Practical approach for demo: POST verify with a tool that scores 50-69.
-    # Looking at policy: outbound untrusted after sensitive = 50 (MEDIUM).
-    # So: first "read" sensitive, then outbound without sensitive payload keywords.
+    # 3. Retrying before any human decided stays pending.
+    pending = verify_tool_call(**CALL, approval_id=aid, api_key=API_KEY)
+    print("3. retry, undecided  :", pending["decision"], pending.get("approval_status"))
 
-    # Step A: touch sensitive tool (records provenance)
-    r0 = verify_tool_call(
-        session_id="sess-approval",
-        agent_id="demo",
-        tool="read_document",
-        arguments={"doc_id": "q3"},
-        api_key=API_KEY,
-    )
-    print("step A (read_document):", r0["decision"], r0["risk_score"])
+    # 4. The human approver decides. decided_by is the authenticated identity.
+    r = decide(aid, "approve", APPROVER_KEY, "X-Approver-Key")
+    print("4. approver decides  :", r.status_code, r.json().get("status"), "by", r.json().get("decided_by"))
 
-    # Step B: outbound without sensitive keywords in payload → +50 MEDIUM → REQUIRE_APPROVAL
-    r1 = verify_tool_call(
-        session_id="sess-approval",
-        agent_id="demo",
-        tool="http_post",
-        arguments={"url": "https://hooks.example.com/notify", "data": "status=ok"},
-        api_key=API_KEY,
-    )
-    print("step B (http_post):", r1["decision"], r1["risk_score"], r1.get("matched_policies"))
-    print("  approval_id:", r1.get("approval_id"))
-    assert r1["decision"] == "REQUIRE_APPROVAL", r1
-    assert r1.get("approval_id") and r1.get("approval_token")
+    # 5. The agent repeats the same call with the approval_id: released once.
+    ok = verify_tool_call(**CALL, approval_id=aid, api_key=API_KEY)
+    print("5. resume            :", ok["decision"])
+    replay = verify_tool_call(**CALL, approval_id=aid, api_key=API_KEY)
+    print("   replay            :", replay["decision"], "(single use)")
 
-    aid, tok = r1["approval_id"], r1["approval_token"]
+    # 6. Tell the engine the approved action ran, so it stops holding the same call.
+    print("6. delivery report   :", report_delivery(aid, "delivered", api_key=API_KEY).get("delivery_status"))
 
-    # Step C: human approves
-    resp = requests.post(
-        f"{BASE}/approval/decide",
-        json={
-            "approval_id": aid,
-            "token": tok,
-            "decision": "approve",
-            "decided_by": "demo-operator",
-        },
-        headers=HEADERS,
-        timeout=5,
-    )
-    print("step C (decide approve):", resp.status_code, resp.json().get("status"))
-    resp.raise_for_status()
-    assert resp.json()["status"] == "approved"
 
-    # Step D: resume with token → ALLOW (single-use)
-    r2 = verify_tool_call(
-        session_id="sess-approval",
-        agent_id="demo",
-        tool="http_post",
-        arguments={"url": "https://hooks.example.com/notify", "data": "status=ok"},
-        approval_id=aid,
-        approval_token=tok,
-        api_key=API_KEY,
-    )
-    print("step D (resume):", r2["decision"], r2.get("reasons"))
-    assert r2["decision"] == "ALLOW"
-
-    # Step E: reuse token → BLOCK (consumed)
-    r3 = verify_tool_call(
-        session_id="sess-approval",
-        agent_id="demo",
-        tool="http_post",
-        arguments={"url": "https://hooks.example.com/notify", "data": "status=ok"},
-        approval_id=aid,
-        approval_token=tok,
-        api_key=API_KEY,
-    )
-    print("step E (reuse):", r3["decision"], r3.get("reasons"))
-    assert r3["decision"] == "BLOCK"
-
-    print("\n✅ Approval queue flow OK")
 if __name__ == "__main__":
     main()

@@ -171,8 +171,10 @@ Set:
 export AEGOTRAX_APPROVAL_WEBHOOK=https://hooks.your-company.com/aegotrax-approval
 ```
 
-When decision is `REQUIRE_APPROVAL`, the engine POSTs the audit event JSON to that URL.  
+When decision is `REQUIRE_APPROVAL`, the engine POSTs the audit event JSON to that URL, plus `approval_id`, `approval_expires_at` and `decide_via`. It contains **no secret**.  
 Your system can page a human; the tool call itself is **not** executed by Aegotrax.
+
+Humans decide with their own credential (`AEGOTRAX_APPROVER_KEY`, or one per person with `AEGOTRAX_APPROVER_KEYS="alice:key-a,bob:key-b"`), sent as `X-Approver-Key`. It must differ from `AEGOTRAX_API_KEY` and must never be given to the agent or SDK host. See "Human approval queue" below.
 
 ---
 
@@ -282,6 +284,8 @@ if drift and drift.severity == "high":
 ## Hardening checklist (v0.2.3)
 
 - [ ] `AEGOTRAX_API_KEY` set (the engine refuses to start without it; do not disable `AEGOTRAX_REQUIRE_API_KEY`)
+- [ ] `AEGOTRAX_APPROVER_KEY` / `AEGOTRAX_APPROVER_KEYS` set to values **different** from the API key, and present only where humans approve (the engine refuses to start if one equals the API key; without any approver key, approvals stay blocked)
+- [ ] First pilot weeks: `AEGOTRAX_ENFORCEMENT=shadow`, review `aegotrax-shadow-report`, tune `policy.yaml`, then switch to `enforce`
 - [ ] Confirm `AEGOTRAX_SERVER_INTENT_ONLY=true` (default) — register intent via `/session`
 - [ ] Tune `trusted_hosts` / `trusted_domains` in `policy.yaml` (hostname allowlist, not substrings)
 - [ ] Session TTL acceptable (`AEGOTRAX_SESSION_TTL`, default 3600)
@@ -296,14 +300,32 @@ if drift and drift.severity == "high":
 
 When a call scores in the approval band:
 
-1. Engine returns `decision=REQUIRE_APPROVAL` plus `approval_id` and `approval_token`
-2. Operator (or webhook consumer) calls:
-   `POST /approval/decide` with `{approval_id, token, decision: "approve"|"deny"}`
-3. Client re-issues the **same** tool+arguments with `approval_id` + `approval_token`
-4. Token is **single-use** (consumed on ALLOW)
+1. Engine returns `decision=REQUIRE_APPROVAL` plus `approval_id`. **No secret is returned to the agent.**
+2. A human approver (or your webhook consumer acting for them) calls
+   `POST /approval/decide` with header `X-Approver-Key: <approver key>` and body `{approval_id, decision: "approve"|"deny"}`.
+   The agent's `X-API-Key` is rejected (401). `decided_by` in the audit trail is the authenticated approver name.
+   Approvers can list open items with `GET /approvals/pending` (approver key only).
+3. Client re-issues the **same** tool+arguments with `approval_id`. Until someone decides it gets `REQUIRE_APPROVAL` with `approval_status: pending` (no duplicate is queued). The MCP gateway does this retry bookkeeping itself and never shows the model an identifier it could misuse.
+4. The approval is **single-use** (consumed on ALLOW) and bound to the session and the exact tool+arguments.
+5. After running the approved action, report the outcome: `report_delivery(approval_id, "delivered" | "failed" | "delivery_uncertain")` (SDK) or `POST /approval/delivery`. Until then the engine holds new permits for the same tool+arguments. The gateway reports it automatically.
 
-Env: `AEGOTRAX_APPROVAL_TTL` (default 1800s), `AEGOTRAX_APPROVAL_WEBHOOK`.
-Demo: `python examples/approval_flow_demo.py` (engine must be running).
+Env: `AEGOTRAX_APPROVAL_TTL` (default 1800s), `AEGOTRAX_APPROVAL_WEBHOOK`, `AEGOTRAX_APPROVER_KEY`, `AEGOTRAX_APPROVER_KEYS`.
+Demo: `python examples/approval_flow_demo.py` (engine must be running; needs both keys).
+
+**Upgrading from 0.2.7:** clients that called `/approval/decide` with `{approval_id, token, decided_by}` and the API key must switch to the approver key; `approval_token` is no longer returned or needed.
+
+---
+
+## Shadow mode (v0.2.8)
+
+`AEGOTRAX_ENFORCEMENT=shadow` makes the engine score and audit every call but always answer `ALLOW` (with `shadow: true` and `would_decide`). No approvals are queued and no sessions are closed. Put the same variable on the SDK/gateway host so the client also fails open if the engine is down.
+
+```bash
+aegotrax-shadow-report                         # human-readable
+aegotrax-shadow-report --json --since 2026-11-01
+```
+
+Read the **friction rate** (share of real calls that would need a human or be blocked) and the rules/tools behind it. Shadow is not protection; do not leave a production agent on it.
 '
 
 ---

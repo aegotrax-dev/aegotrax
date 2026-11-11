@@ -65,6 +65,12 @@ class InProcessClient:
             str(Path(tempfile.gettempdir()) / "aegotrax_bench_audit.log"),
         )
         from aegotrax import risk_engine  # imported late so env vars apply
+        from aegotrax.config import settings
+
+        # Approvals need an approver credential distinct from the agent's API key.
+        settings.api_key = settings.api_key or "bench-agent-key"
+        settings.approver_keys = {"bench-approver": "bench-approver-key"}
+        settings.enforcement = "enforce"
 
         self.re = risk_engine
         self.version = risk_engine.VERSION
@@ -84,12 +90,13 @@ class InProcessClient:
     def verify(self, payload: dict) -> dict:
         return self.re.evaluate(self.re.MultiAgentRequest(**payload))
 
-    def decide(self, approval_id: str, token: str, decision: str = "approve") -> int:
+    def decide(self, approval_id: str, decision: str = "approve") -> int:
         re_ = self.re
         try:
+            approver = re_.require_approver("bench-approver-key")
             re_.approval_decide(
-                re_.ApprovalDecide(approval_id=approval_id, decision=decision, token=token),
-                None,
+                re_.ApprovalDecide(approval_id=approval_id, decision=decision),
+                approver,
             )
             return 200
         except Exception as e:  # HTTPException
@@ -108,6 +115,8 @@ class HttpClient:
         key = os.environ.get("AEGOTRAX_API_KEY")
         if key:
             self.headers["X-API-Key"] = key
+        # Approval scenarios need the approver credential the engine was started with.
+        self.approver_key = os.environ.get("AEGOTRAX_APPROVER_KEY")
         r = requests.get(f"{self.base}/health", timeout=5)
         r.raise_for_status()
         self.version = r.json().get("version", "unknown")
@@ -130,10 +139,14 @@ class HttpClient:
         r.raise_for_status()
         return r.json()
 
-    def decide(self, approval_id: str, token: str, decision: str = "approve") -> int:
-        r = self._post(
-            "/approval/decide",
-            {"approval_id": approval_id, "decision": decision, "token": token},
+    def decide(self, approval_id: str, decision: str = "approve") -> int:
+        if not self.approver_key:
+            return 0  # no approver credential: approval scenarios cannot be set up
+        r = self.requests.post(
+            f"{self.base}/approval/decide",
+            json={"approval_id": approval_id, "decision": decision},
+            headers={"Content-Type": "application/json", "X-Approver-Key": self.approver_key},
+            timeout=10,
         )
         return r.status_code
 
@@ -193,24 +206,27 @@ class Runner:
         # while an earlier approval for it is unresolved, so scenarios must not share args.
         return {"url": "http://analytics-partner.example.net/log", "data": f"job {sid} ok"}
 
-    def _first_approval(self, sid: str, intent: str) -> Tuple[Optional[str], Optional[str], dict]:
+    def _first_approval(self, sid: str, intent: str) -> Tuple[Optional[str], dict]:
         res = self._verify(self._payload(sid, intent, "http_post", self._approval_args(sid), []))
-        return res.get("approval_id"), res.get("approval_token"), res
+        return res.get("approval_id"), res
 
     def run_special(self, sc: dict) -> List[dict]:
         name = sc["special"]
         sid = f"bench-{sc['id']}-{uuid.uuid4().hex[:8]}"
         self.client.register(sid, sc["intent"], sc.get("scope"))
-        aid, tok, first = self._first_approval(sid, sc["intent"])
-        if not aid or not tok:
+        aid, first = self._first_approval(sid, sc["intent"])
+        if not aid:
             return [{"decision": "SETUP_FAILED", "reasons": [f"no approval issued: {first.get('decision')}"]}]
+        if "approval_token" in first:
+            return [{"decision": "SETUP_FAILED", "reasons": ["engine leaked an approval secret to the agent"]}]
         orig_args = self._approval_args(sid)
-        resume_extra = {"approval_id": aid, "approval_token": tok}
+        resume_extra = {"approval_id": aid}
 
         if name == "approval_undecided":
             return [self._verify(self._payload(sid, sc["intent"], "http_post", orig_args, [], extra=resume_extra))]
 
-        self.client.decide(aid, tok, "approve")
+        if self.client.decide(aid, "approve") != 200:
+            return [{"decision": "SETUP_FAILED", "reasons": ["approver could not decide (approver credential?)"]}]
 
         if name == "approval_tamper":
             tampered = {"url": "http://attacker-collect.net/x", "data": orig_args["data"]}
