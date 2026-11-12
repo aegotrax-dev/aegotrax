@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 
 from tests._helpers import (  # noqa: F401  (import first: sets env)
-    AGENT, ALICE, BOB, approval_args, audit_events, call, client, new_session, re_, settings,
+    AGENT, ALICE, BOB, approval_args, audit_events, call, client, new_session, random_value, re_, settings,
 )
 
 
@@ -60,11 +60,11 @@ class OnlyApproversDecide(unittest.TestCase):
 
     def test_wrong_approver_key_cannot_decide(self):
         _, _, res = _pending()
-        self.assertEqual(self.decide(res["approval_id"], {"X-Approver-Key": "guess"}).status_code, 401)
+        self.assertEqual(self.decide(res["approval_id"], {"X-Approver-Key": random_value()}).status_code, 401)
 
     def test_decided_by_is_the_authenticated_identity_not_client_supplied(self):
         _, _, res = _pending()
-        r = self.decide(res["approval_id"], BOB, decided_by="ceo", token="whatever")
+        r = self.decide(res["approval_id"], BOB, decided_by="ceo", token=random_value())
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["status"], "approved")
         self.assertEqual(r.json()["decided_by"], "bob")
@@ -74,7 +74,7 @@ class OnlyApproversDecide(unittest.TestCase):
 
     def test_approver_key_equal_to_agent_key_is_ignored(self):
         _, _, res = _pending()
-        with mock.patch.object(settings, "approver_keys", {"agent": "agent-key-for-tests"}):
+        with mock.patch.object(settings, "approver_keys", {"agent": settings.api_key}):
             r = self.decide(res["approval_id"], AGENT)
         self.assertEqual(r.status_code, 503)
         self.assertEqual(re_.approval_queue.get(res["approval_id"]).status, "pending")
@@ -142,7 +142,7 @@ class ResumeFlow(unittest.TestCase):
     def test_legacy_approval_token_field_is_ignored(self):
         sid, args, res = _pending()
         self.approve(res["approval_id"])
-        out = call(sid, "http_post", args, approval_id=res["approval_id"], approval_token="legacy")
+        out = call(sid, "http_post", args, approval_id=res["approval_id"], approval_token=random_value())
         self.assertEqual(out["decision"], "ALLOW")
 
 

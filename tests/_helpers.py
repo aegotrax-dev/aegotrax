@@ -5,6 +5,7 @@ file, and gives the tests an agent credential and two approver credentials.
 """
 
 import os
+import secrets
 import sys
 import tempfile
 import uuid
@@ -16,8 +17,17 @@ if str(REPO) not in sys.path:
 
 AUDIT_LOG = str(Path(tempfile.gettempdir()) / f"aegotrax_tests_{uuid.uuid4().hex[:8]}.log")
 os.environ["AEGOTRAX_AUDIT_LOG"] = AUDIT_LOG
-os.environ["AEGOTRAX_API_KEY"] = "agent-key-for-tests"
-os.environ["AEGOTRAX_APPROVER_KEYS"] = "alice:alice-secret,bob:bob-secret"
+# Credentials are random per test run: nothing secret-looking is committed to the repo.
+def random_value() -> str:
+    return secrets.token_urlsafe(24)
+
+
+AGENT_KEY = random_value()
+ALICE_KEY = random_value()
+BOB_KEY = random_value()
+
+os.environ["AEGOTRAX_API_KEY"] = AGENT_KEY
+os.environ["AEGOTRAX_APPROVER_KEYS"] = f"alice:{ALICE_KEY},bob:{BOB_KEY}"
 os.environ.pop("AEGOTRAX_APPROVER_KEY", None)
 os.environ["AEGOTRAX_ENFORCEMENT"] = "enforce"
 os.environ.pop("AEGOTRAX_APPROVAL_WEBHOOK", None)
@@ -26,12 +36,12 @@ from aegotrax import risk_engine as re_  # noqa: E402
 from aegotrax.config import settings  # noqa: E402
 
 settings.audit_log = AUDIT_LOG
-settings.api_key = "agent-key-for-tests"
-settings.approver_keys = {"alice": "alice-secret", "bob": "bob-secret"}
+settings.api_key = AGENT_KEY
+settings.approver_keys = {"alice": ALICE_KEY, "bob": BOB_KEY}
 
-AGENT = {"X-API-Key": "agent-key-for-tests"}
-ALICE = {"X-Approver-Key": "alice-secret"}
-BOB = {"X-Approver-Key": "bob-secret"}
+AGENT = {"X-API-Key": AGENT_KEY}
+ALICE = {"X-Approver-Key": ALICE_KEY}
+BOB = {"X-Approver-Key": BOB_KEY}
 
 
 def client():
