@@ -1,7 +1,7 @@
 """Audit event models for Aegotrax."""
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import uuid
 
 from pydantic import BaseModel, Field
@@ -22,3 +22,8 @@ class AuditEvent(BaseModel):
     reasons: List[str]
     attack_path: str
     matched_policies: List[str] = []
+    # 0.2.8. `decision` is always what the policy decided. In shadow mode the caller was
+    # told ALLOW regardless; `enforced_decision` records what the caller actually got.
+    # Lines written by older versions have neither field (treat as mode="enforce").
+    mode: str = "enforce"
+    enforced_decision: Optional[str] = None

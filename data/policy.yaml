@@ -1,9 +1,15 @@
-# Aegotrax Security Policy (0.2.6)
+# Aegotrax Security Policy (0.2.8)
 # Override with AEGOTRAX_POLICY_PATH or place policy.yaml in CWD.
 
 risk_thresholds:
   block: 70
   require_approval: 50
+
+# What an email to a recipient outside trusted_domains does by itself (0.2.8):
+#   REQUIRE_APPROVAL (default) — a human approver decides
+#   BLOCK                      — hard stop (the pre-0.2.8 behaviour)
+# After a sensitive read, sending outside trusted domains is still blocked either way.
+email_untrusted_recipient: REQUIRE_APPROVAL
 
 trusted_domains:
   - "@company.com"
@@ -54,10 +60,23 @@ tool_classes:
   # open_risk tools elevate to REQUIRE_APPROVAL unless already blocked
   open_risk_min_decision: REQUIRE_APPROVAL
 
+# Tools that run code or commands (0.2.8). The dangerous_script_keywords check and the
+# intent heuristic apply to exactly these names, so keep it in line with tool_classes.
+code_execution_tools:
+  - "execute_script"
+  - "run_code"
+  - "shell"
+  - "execute_code"
+  - "run_shell"
+
+# Keywords of 3 characters or fewer ("rm") match whole tokens only; longer ones match as
+# substrings (so "wipe" still catches "wipe_logs.sh").
 dangerous_script_keywords:
   - "wipe"
   - "delete"
   - "rm"
+  - "rmdir"
+  - "rmtree"
   - "logs"
   - "privilege"
   - "drop table"
@@ -65,7 +84,7 @@ dangerous_script_keywords:
   - "shred"
   - "unlink"
   - "remove"
-  - "format"
+  - "format c:"
   - "mkfs"
   - "dd if="
 

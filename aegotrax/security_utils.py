@@ -8,7 +8,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 
@@ -206,6 +206,10 @@ _RESTRICTIVE_PATTERNS = [
     re.compile(r"\bno\s+(outbound|external|email|posting|writes?)\b", re.I),
 ]
 
+# Tools that change something or move data out. Plain reads (read_db, list_users,
+# query_customers, read_document) are deliberately NOT here (0.2.8): a "read-only" or
+# "list only" intent must not hard-block the very reads it permits. Reads are
+# governed by session scope, read budgets and the sensitivity ceiling instead.
 _SIDE_EFFECT_TOOLS = {
     "send_email",
     "email",
@@ -215,13 +219,13 @@ _SIDE_EFFECT_TOOLS = {
     "execute_script",
     "run_code",
     "shell",
-    "read_db",
-    "list_users",
-    "query_customers",
+    "execute_code",
+    "run_shell",
     "export_records",
     "get_ssn",
     "write_file",
     "delete_file",
+    "delete_user",
 }
 
 
@@ -230,8 +234,36 @@ def intent_is_restrictive(intent: str) -> bool:
     return any(p.search(text) for p in _RESTRICTIVE_PATTERNS)
 
 
-def tool_has_side_effects(tool: str) -> bool:
-    return (tool or "").lower() in _SIDE_EFFECT_TOOLS
+def tool_has_side_effects(tool: str, extra: Optional[Iterable[str]] = None) -> bool:
+    """True if the tool changes state or sends data out.
+
+    `extra` lets the caller add tool names from policy (e.g. code_execution_tools,
+    side_effect_tools) so the heuristic follows the operator's own tool names.
+    """
+    name = (tool or "").lower()
+    if name in _SIDE_EFFECT_TOOLS:
+        return True
+    return name in {str(t).lower() for t in (extra or [])}
+
+
+# ---------------------------------------------------------------------------
+# Keyword matching for script arguments
+# ---------------------------------------------------------------------------
+
+# Keywords this short ("rm", "dd") are matched as whole tokens: as bare substrings they
+# hit ordinary words ("fo-rm-at", "a-dd-ress"). Longer keywords keep substring matching
+# so "wipe" still matches "wipe_logs.sh" and "wipelogs".
+_SHORT_KEYWORD_MAX_LEN = 3
+
+
+def contains_keyword(text: str, keyword: str) -> bool:
+    """Match a policy keyword against already-lowercased text."""
+    kw = (keyword or "").strip().lower()
+    if not kw:
+        return False
+    if len(kw) > _SHORT_KEYWORD_MAX_LEN:
+        return kw in text
+    return re.search(r"(?<![a-z0-9])" + re.escape(kw) + r"(?![a-z0-9])", text) is not None
 
 
 # ---------------------------------------------------------------------------

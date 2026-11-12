@@ -14,10 +14,12 @@ import yaml
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from . import __version__
 from .approval import approval_queue, call_fingerprint
 from .audit_models import AuditEvent
 from .config import settings, warn_insecure_defaults
 from .security_utils import (
+    contains_keyword,
     email_domain_allowed,
     hostname_allowed,
     intent_is_restrictive,
@@ -29,7 +31,7 @@ from .security_utils import (
 
 logger = logging.getLogger("aegotrax.risk_engine")
 
-VERSION = "0.2.6"
+VERSION = __version__  # single source of truth: aegotrax/__init__.py
 
 app = FastAPI(
     title="Aegotrax Risk Engine",
@@ -62,6 +64,64 @@ def require_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
 
 
+def _effective_approver_keys() -> Dict[str, str]:
+    """Approver credentials that are safe to honour.
+
+    An approver key identical to the agent API key is dropped: it would let the agent
+    credential approve its own requests, which is exactly what separate approver
+    credentials exist to prevent.
+    """
+    agent_key = settings.api_key
+    out: Dict[str, str] = {}
+    for name, key in (settings.approver_keys or {}).items():
+        if agent_key and secrets.compare_digest(str(key), str(agent_key)):
+            continue
+        out[name] = key
+    return out
+
+
+def _identify_approver(x_approver_key: Optional[str]) -> Optional[str]:
+    """Return the approver identity for this key, or None. Checks every key (no early exit)."""
+    if not x_approver_key:
+        return None
+    found: Optional[str] = None
+    for name, key in _effective_approver_keys().items():
+        if secrets.compare_digest(str(x_approver_key), str(key)):
+            found = name
+    return found
+
+
+def require_approver(x_approver_key: Optional[str] = Header(default=None)) -> str:
+    """Authenticate a HUMAN APPROVER and return the verified identity (used as decided_by).
+
+    Deliberately separate from require_api_key: the agent/SDK holds the API key, so the
+    API key must never be enough to decide an approval.
+    """
+    if not _effective_approver_keys():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Approvals disabled: no approver credential configured "
+                "(set AEGOTRAX_APPROVER_KEY to a value different from AEGOTRAX_API_KEY)"
+            ),
+        )
+    identity = _identify_approver(x_approver_key)
+    if identity is None:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Approver-Key")
+    return identity
+
+
+def require_agent_or_approver(
+    x_api_key: Optional[str] = Header(default=None),
+    x_approver_key: Optional[str] = Header(default=None),
+) -> str:
+    """Return "approver" or "agent" for endpoints both sides may read (status polling)."""
+    if _identify_approver(x_approver_key) is not None:
+        return "approver"
+    require_api_key(x_api_key)
+    return "agent"
+
+
 class MultiAgentRequest(BaseModel):
     session_id: str
     agent_id: str
@@ -72,9 +132,9 @@ class MultiAgentRequest(BaseModel):
     schema_drift: Optional[Dict[str, Any]] = None
     # Optional caller-declared user binding (for multi-tenant isolation)
     user_id: Optional[str] = None
-    # Human-approval resume (from a prior REQUIRE_APPROVAL)
+    # Human-approval resume (from a prior REQUIRE_APPROVAL): the approval_id alone.
+    # The engine never issues the agent a secret; deciding needs the approver credential.
     approval_id: Optional[str] = None
-    approval_token: Optional[str] = None
 
 
 class SessionScope(BaseModel):
@@ -104,8 +164,14 @@ class SessionReset(BaseModel):
 class ApprovalDecide(BaseModel):
     approval_id: str
     decision: str  # approve | deny
-    token: str
-    decided_by: str = "human"
+    # No `token` and no `decided_by`: the approver is authenticated by X-Approver-Key and
+    # the verified identity is recorded. Old clients that still send those fields are
+    # accepted but the values are ignored.
+
+
+class ApprovalDelivery(BaseModel):
+    approval_id: str
+    status: str  # delivered | delivery_uncertain | failed
 
 
 def _default_policy() -> dict:
@@ -260,6 +326,33 @@ def _sensitivity_cfg() -> dict:
     return POLICY_CONFIG.get("sensitivity_ceiling") or {}
 
 
+# Tools that run code/commands. Policy-driven (0.2.8) so the script-keyword check and the
+# intent heuristic follow the same tool names as tool_classes (before, the policy listed
+# execute_code/run_shell while the check only knew execute_script/run_code/shell).
+_DEFAULT_CODE_EXECUTION_TOOLS = (
+    "execute_script", "run_code", "shell", "execute_code", "run_shell",
+)
+
+
+def _code_execution_tools() -> Set[str]:
+    configured = POLICY_CONFIG.get("code_execution_tools")
+    return set(configured) if configured else set(_DEFAULT_CODE_EXECUTION_TOOLS)
+
+
+def _side_effect_extras() -> Set[str]:
+    return _code_execution_tools() | set(POLICY_CONFIG.get("side_effect_tools") or [])
+
+
+def _email_untrusted_action() -> str:
+    """What an email to a recipient outside trusted_domains does on its own.
+
+    REQUIRE_APPROVAL (default): a human decides. BLOCK: hard stop (pre-0.2.8 behaviour).
+    Sending it after a sensitive read still blocks via the exfiltration rules.
+    """
+    action = str(POLICY_CONFIG.get("email_untrusted_recipient") or "REQUIRE_APPROVAL").strip().upper()
+    return action if action in ("BLOCK", "REQUIRE_APPROVAL") else "REQUIRE_APPROVAL"
+
+
 def _raise_sensitivity_ceiling(session_data: Dict[str, Any], tool: str) -> int:
     cfg = _sensitivity_cfg()
     if not cfg.get("enabled", True):
@@ -342,7 +435,58 @@ def analyze_payload_sensitivity(arg_text: str, sensitive_sources: Set[str]) -> b
 # Core evaluate
 # ---------------------------------------------------------------------------
 
+def _audit_result(request: MultiAgentRequest, result: dict, shadow: bool) -> None:
+    """Audit a decision that returned before the main scoring path (session scope,
+    closed session, rate limit, user binding, failed approval resume, ...).
+
+    Before 0.2.8 those hard blocks were returned but never written to the audit log.
+    """
+    meta = SESSION_META.get(request.session_id) or {}
+    user_intent = result.get("server_intent") or meta.get("user_intent") or request.user_intent or ""
+    args = redact_arguments(request.arguments) if settings.audit_redact else request.arguments
+    decision = str(result.get("decision"))
+    event = AuditEvent(
+        session_id=request.session_id,
+        agent_id=request.agent_id,
+        tool_name=request.tool,
+        arguments=args or {},
+        user_intent=user_intent,
+        risk_score=int(result.get("risk_score") or 0),
+        decision=decision,
+        reasons=list(result.get("reasons") or []),
+        attack_path=result.get("attack_path") or request.tool,
+        matched_policies=list(result.get("matched_policies") or []),
+        mode="shadow" if shadow else "enforce",
+        enforced_decision="ALLOW" if shadow else decision,
+    )
+    log_audit_event(event)
+    maybe_stream_audit(event)
+
+
 def evaluate(request: MultiAgentRequest) -> dict:
+    """Decide on one tool call.
+
+    enforce (default): the decision is returned as computed.
+    shadow: the full decision is computed and audited, but the caller is always told
+    ALLOW; the response carries shadow=True and would_decide=<what enforce would do>.
+    Shadow never creates approvals and never closes sessions, so it has no side effects
+    on the agent.
+    """
+    shadow = settings.enforcement == "shadow"
+    ctx: Dict[str, Any] = {"shadow": shadow, "logged": False}
+    result = _evaluate(request, ctx)
+    if not ctx["logged"]:
+        _audit_result(request, result, shadow)
+    result["enforcement"] = "shadow" if shadow else "enforce"
+    if shadow:
+        result["would_decide"] = result.get("decision")
+        result["decision"] = "ALLOW"
+        result["shadow"] = True
+    return result
+
+
+def _evaluate(request: MultiAgentRequest, ctx: Dict[str, Any]) -> dict:
+    shadow = bool(ctx.get("shadow"))
     _purge_expired_sessions()
 
     # Rate limit
@@ -361,10 +505,32 @@ def evaluate(request: MultiAgentRequest) -> dict:
     meta = SESSION_META.get(request.session_id)
 
     # --- Resume path: prior REQUIRE_APPROVAL was human-approved ---
-    if request.approval_id and request.approval_token:
+    # (not in shadow: shadow never creates approvals, so there is nothing to resume)
+    if request.approval_id and not shadow:
+        pending_item = approval_queue.get(request.approval_id)
+        if (
+            pending_item is not None
+            and pending_item.status == "pending"
+            and pending_item.session_id == request.session_id
+            and pending_item.fingerprint
+            == call_fingerprint(request.tool, request.arguments or {})
+        ):
+            # Same call, nobody has decided yet: not an error, and not worth an audit
+            # line per poll. The caller keeps the same approval_id and tries later.
+            ctx["logged"] = True
+            return {
+                "decision": "REQUIRE_APPROVAL",
+                "risk_score": pending_item.risk_score,
+                "reasons": ["Approval still pending: no human approver has decided yet."],
+                "attack_path": request.tool,
+                "matched_policies": ["approval_pending"],
+                "session_id": request.session_id,
+                "approval_id": pending_item.approval_id,
+                "approval_status": "pending",
+                "approval_expires_at": pending_item.expires_at,
+            }
         err = approval_queue.consume_if_approved(
             approval_id=request.approval_id,
-            token=request.approval_token,
             tool=request.tool,
             arguments=request.arguments or {},
             session_id=request.session_id,
@@ -396,6 +562,7 @@ def evaluate(request: MultiAgentRequest) -> dict:
             )
             log_audit_event(audit_event)
             maybe_stream_audit(audit_event)
+            ctx["logged"] = True
             return {
                 "decision": "ALLOW",
                 "risk_score": 0,
@@ -407,7 +574,7 @@ def evaluate(request: MultiAgentRequest) -> dict:
                 "approval_id": request.approval_id,
                 "approval_status": "consumed",
             }
-        # Token supplied but not valid → BLOCK (do not fall through silently)
+        # approval_id supplied but not valid → BLOCK (do not fall through silently)
         return {
             "decision": "BLOCK",
             "risk_score": 100,
@@ -455,7 +622,7 @@ def evaluate(request: MultiAgentRequest) -> dict:
     try:
         fp_hold = call_fingerprint(request.tool, request.arguments or {})
         prior = approval_queue.uncertain_fingerprint(fp_hold)
-        if prior is not None and not (request.approval_id and request.approval_token):
+        if prior is not None:
             return {
                 "decision": "BLOCK",
                 "risk_score": 80,
@@ -573,7 +740,9 @@ def evaluate(request: MultiAgentRequest) -> dict:
             matched.append("schema_drift_low")
 
     # Intent constraint (broader than just the word "only")
-    if intent_is_restrictive(user_intent) and tool_has_side_effects(request.tool):
+    if intent_is_restrictive(user_intent) and tool_has_side_effects(
+        request.tool, extra=_side_effect_extras()
+    ):
         score += 70
         reasons.append(
             f"Intent Constraint Violation: restrictive intent ({user_intent[:80]!r}) "
@@ -582,9 +751,9 @@ def evaluate(request: MultiAgentRequest) -> dict:
         matched.append("intent_constraint")
 
     # Dangerous scripts
-    if request.tool in ("execute_script", "run_code", "shell"):
+    if request.tool in _code_execution_tools():
         dangerous_keywords = POLICY_CONFIG.get("dangerous_script_keywords", [])
-        if any(k in arg_text for k in dangerous_keywords):
+        if any(contains_keyword(arg_text, k) for k in dangerous_keywords):
             score += 70
             reasons.append("CRITICAL: Malicious script execution attempt blocked.")
             matched.append("dangerous_script")
@@ -608,7 +777,7 @@ def evaluate(request: MultiAgentRequest) -> dict:
                 f"{new_count}/{budget_limit} calls this session."
             )
             matched.append("read_budget")
-            if _end_session_on_budget_exceed():
+            if _end_session_on_budget_exceed() and not shadow:
                 _close_session(
                     request.session_id,
                     f"read_budget_exhausted tool={request.tool}",
@@ -628,7 +797,12 @@ def evaluate(request: MultiAgentRequest) -> dict:
         if recipient:
             trusted_domains = POLICY_CONFIG.get("trusted_domains", [])
             if not email_domain_allowed(recipient, trusted_domains):
-                score += 70
+                if _email_untrusted_action() == "BLOCK":
+                    score += 70
+                else:
+                    # A human decides; if sensitive data was read first, the
+                    # exfiltration rules below still push this to BLOCK.
+                    score = max(score, RISK_THRESHOLDS.get("require_approval", 50))
                 reasons.append(
                     f"Security Violation: Email recipient '{recipient}' is outside trusted domains."
                 )
@@ -777,11 +951,11 @@ def evaluate(request: MultiAgentRequest) -> dict:
     )
 
     approval_id = None
-    approval_token = None
     approval_status = None
     approval_expires_at = None
 
-    if decision == "REQUIRE_APPROVAL":
+    # Shadow mode never queues an approval: nobody is waiting on it.
+    if decision == "REQUIRE_APPROVAL" and not shadow:
         pending = approval_queue.create(
             session_id=request.session_id,
             agent_id=request.agent_id,
@@ -792,7 +966,6 @@ def evaluate(request: MultiAgentRequest) -> dict:
             user_intent=user_intent,
         )
         approval_id = pending.approval_id
-        approval_token = pending.token
         approval_status = pending.status
         approval_expires_at = pending.expires_at
         matched.append("approval_queued")
@@ -808,24 +981,26 @@ def evaluate(request: MultiAgentRequest) -> dict:
         reasons=reasons,
         attack_path=attack_path,
         matched_policies=matched,
+        mode="shadow" if shadow else "enforce",
+        enforced_decision="ALLOW" if shadow else decision,
     )
     log_audit_event(audit_event)
     maybe_stream_audit(audit_event)
+    ctx["logged"] = True
 
-    if decision == "REQUIRE_APPROVAL":
-        # Enrich webhook payload with approval credentials for human operators
+    if decision == "REQUIRE_APPROVAL" and not shadow:
+        # Tell the human approvers. The payload carries the approval_id (and what to
+        # approve) but no secret: deciding requires the approver credential.
         try:
             extra = audit_event.model_dump()
             extra["approval_id"] = approval_id
-            extra["approval_token"] = approval_token
             extra["approval_expires_at"] = approval_expires_at
+            extra["decide_via"] = "POST /approval/decide with X-Approver-Key"
             webhook = settings.approval_webhook
             if webhook and _webhook_url_allowed(webhook):
                 requests.post(webhook, json=extra, timeout=2.0)
         except Exception:
             pass
-    else:
-        maybe_notify_approval(audit_event)
 
     result = {
         "decision": decision,
@@ -838,7 +1013,6 @@ def evaluate(request: MultiAgentRequest) -> dict:
     }
     if approval_id:
         result["approval_id"] = approval_id
-        result["approval_token"] = approval_token
         result["approval_status"] = approval_status
         result["approval_expires_at"] = approval_expires_at
     if budget_info is not None:
@@ -873,6 +1047,8 @@ def health():
         "version": VERSION,
         "auth_enabled": bool(settings.api_key),
         "require_api_key": settings.require_api_key,
+        "enforcement": settings.enforcement,
+        "approvals_enabled": bool(_effective_approver_keys()),
         "server_intent_only": settings.trust_server_intent_only,
         "session_ttl_seconds": settings.session_ttl_seconds,
         "approval_ttl_seconds": settings.approval_ttl_seconds,
@@ -966,19 +1142,20 @@ def policy_reload(_: None = Depends(require_api_key)):
 
 
 @app.post("/approval/decide")
-def approval_decide(body: ApprovalDecide, _: None = Depends(require_api_key)):
-    """Approve or deny a pending REQUIRE_APPROVAL item (human / external workflow)."""
+def approval_decide(body: ApprovalDecide, approver: str = Depends(require_approver)):
+    """Approve or deny a pending REQUIRE_APPROVAL item.
+
+    Requires the APPROVER credential (X-Approver-Key), not the agent's API key.
+    `decided_by` is the authenticated approver identity, not a client-supplied value.
+    """
     try:
         item = approval_queue.decide(
             body.approval_id,
             decision=body.decision,
-            token=body.token,
-            decided_by=body.decided_by or "human",
+            decided_by=approver,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="approval not found")
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -1000,18 +1177,55 @@ def approval_decide(body: ApprovalDecide, _: None = Depends(require_api_key)):
 
 
 @app.get("/approval/{approval_id}")
-def approval_status(approval_id: str, _: None = Depends(require_api_key)):
+def approval_status(approval_id: str, role: str = Depends(require_agent_or_approver)):
     item = approval_queue.get(approval_id)
     if item is None:
         raise HTTPException(status_code=404, detail="approval not found")
     data = item.to_public_dict()
-    # never expose token on status GET
+    if role != "approver":
+        # An agent may poll the outcome of its own request, but not read arguments
+        # or decisions of anyone else's.
+        keep = ("approval_id", "status", "expires_at", "decided_at", "delivery_status")
+        data = {k: data[k] for k in keep}
     return data
 
 
 @app.get("/approvals/pending")
-def approvals_pending(session_id: Optional[str] = None, _: None = Depends(require_api_key)):
+def approvals_pending(session_id: Optional[str] = None, _: str = Depends(require_approver)):
+    # Approvers only: this lists tool arguments across sessions.
     return {"pending": approval_queue.list_pending(session_id=session_id)}
+
+
+@app.post("/approval/delivery")
+def approval_delivery(body: ApprovalDelivery, _: None = Depends(require_api_key)):
+    """Host reports what happened after an approved call was released
+    (delivered | delivery_uncertain | failed). Until reported, new permits for the same
+    tool+arguments are held."""
+    item, err = approval_queue.mark_delivery(body.approval_id, body.status)
+    if err or item is None:
+        msg = err or "unknown approval_id"
+        if msg.startswith("unknown"):
+            code = 404
+        elif msg.startswith("invalid"):
+            code = 422
+        else:
+            code = 409
+        raise HTTPException(status_code=code, detail=msg)
+    event = AuditEvent(
+        session_id=item.session_id,
+        agent_id=item.agent_id,
+        tool_name=item.tool,
+        arguments=redact_arguments(item.arguments) if settings.audit_redact else item.arguments,
+        user_intent=item.user_intent,
+        risk_score=item.risk_score,
+        decision=f"APPROVAL_DELIVERY_{str(item.delivery_status).upper()}",
+        reasons=[f"Delivery reported: {item.delivery_status}"],
+        attack_path=item.tool,
+        matched_policies=["approval_delivery"],
+    )
+    log_audit_event(event)
+    maybe_stream_audit(event)
+    return {"ok": True, **item.to_public_dict()}
 
 
 def main():
@@ -1022,6 +1236,14 @@ def main():
             "Refusing to start: AEGOTRAX_API_KEY is not set.\n"
             "  Set AEGOTRAX_API_KEY in your environment before starting the engine.\n"
             "  (Local throw-away experiments only: AEGOTRAX_REQUIRE_API_KEY=0 disables this check.)\n"
+        )
+        raise SystemExit(1)
+
+    if settings.api_key and any(k == settings.api_key for k in settings.approver_keys.values()):
+        sys.stderr.write(
+            "Refusing to start: an approver key equals AEGOTRAX_API_KEY.\n"
+            "  The agent credential must not be able to approve its own requests;\n"
+            "  give approvers their own AEGOTRAX_APPROVER_KEY / AEGOTRAX_APPROVER_KEYS.\n"
         )
         raise SystemExit(1)
 
