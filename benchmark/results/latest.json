@@ -1,13 +1,13 @@
 {
   "meta": {
-    "date_utc": "2026-11-11T19:10:43+00:00",
+    "date_utc": "2026-11-11T23:59:56+00:00",
     "engine_version": "0.2.8",
     "mode": "in-process",
-    "python": "3.12.3",
-    "platform": "Linux-6.18.44-fc-v378-x86_64-with-glibc2.39",
+    "python": "3.10.11",
+    "platform": "Windows-10-10.0.26300-SP0",
     "policy_sha256": "209d038d6c1d45964afbcccb6693bb6daf11bb0187356226af1967a82bba899d",
     "scenario_count": 77,
-    "note": "Produced in a sandbox with minimal stand-ins for pydantic/fastapi; decisions come from the real evaluate() code. Re-run locally before quoting latency.",
+    "note": "",
     "latency_note": "engine decision time only (no network)"
   },
   "summary": {
@@ -94,10 +94,10 @@
   },
   "latency_ms": {
     "calls": 192,
-    "p50": 0.344,
-    "p95": 0.544,
-    "mean": 0.362,
-    "max": 0.996
+    "p50": 0.306,
+    "p95": 0.429,
+    "mean": 0.321,
+    "max": 0.627
   },
   "scenarios": [
     {

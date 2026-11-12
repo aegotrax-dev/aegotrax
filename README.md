@@ -53,7 +53,7 @@ cd aegotrax
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 source .venv/bin/activate
-pip install .
+pip install .                       # for development and tests: pip install -e ".[test]" && python -m pytest
 
 # The engine refuses to start without a key (secure by default). Generate one:
 export AEGOTRAX_API_KEY="your-strong-api-key-here"
@@ -234,6 +234,8 @@ If Aegotrax helped, a GitHub star helps others find the pilot:
 ⭐ **https://github.com/aegotrax-dev/aegotrax**
 
 [![HOL Guard](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Daegotrax-dev%252Faegotrax%26metric%3Dtrust)](https://hol.org/registry/plugins/aegotrax-dev%2Faegotrax)
+
+**Running agents with real tools?** I am looking for one or two teams to try Aegotrax in **shadow mode** (it only logs what it would have blocked, nothing is enforced) and give weekly feedback. Open an issue titled "Pilot" with a line about your stack, or reach out through [aegotrax.com](https://aegotrax.com).
 
 Issues and break reports are equally welcome.
 

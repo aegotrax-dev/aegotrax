@@ -79,7 +79,6 @@ Benign calls needing approval: unknown tools (`get_weather`, `calculator`, `sear
 * Interception rate is inflated by design for novel tools (fail-closed default). Compare the hard-block rate and the benign friction numbers alongside it.
 * Scenarios exercise the engine's decision logic with scripted tool calls. No LLM is in the loop, so this does not measure how often a model actually produces these calls.
 * `--in-process` latency is engine decision time only, with no network or request validation overhead. Use `--url` for round-trip latency on your hardware.
-* The checked-in `results/latest.json` was produced in a sandbox with a minimal stand-in for pydantic/fastapi (see its `meta.note`). Decisions come from the real `evaluate()` code, but re-run locally and commit your own results file before quoting latency.
 
 ## Adding scenarios
 
