@@ -9,7 +9,7 @@ Two ways to run it:
   2) Against a running engine over HTTP (measures real round-trip latency):
          export AEGOTRAX_API_KEY=...        # same key the engine was started with
          aegotrax-engine                    # other terminal
-         python benchmark/run_benchmark.py --url http://127.0.0.1:8000
+         python benchmark/run_benchmark.py --url http://127.0.0.1:8100
 
 Results are printed and written to benchmark/results/latest.json.
 
@@ -370,7 +370,7 @@ def print_report(summary: dict, latencies: List[float], meta: dict, results: Lis
 def main() -> None:
     ap = argparse.ArgumentParser(description="Aegotrax scenario benchmark")
     ap.add_argument("--in-process", action="store_true", help="call evaluate() directly (no server)")
-    ap.add_argument("--url", default=os.environ.get("AEGOTRAX_ENGINE_BASE", "http://127.0.0.1:8000"))
+    ap.add_argument("--url", default=os.environ.get("AEGOTRAX_ENGINE_BASE", "http://127.0.0.1:8100"))
     ap.add_argument("--out", default=str(HERE / "results" / "latest.json"))
     ap.add_argument("--category", help="only run scenarios of this category")
     ap.add_argument("--note", default="", help="free-text note stored in the results metadata")

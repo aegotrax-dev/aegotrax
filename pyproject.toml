@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aegotrax"
-version = "0.2.8"
+version = "0.2.9"
 description = "Runtime security gateway for AI agents (MCP + Python SDK)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,6 +36,7 @@ demo = [
 aegotrax-engine = "aegotrax.risk_engine:main"
 aegotrax-gateway = "aegotrax.mcp_gateway:main"
 aegotrax-shadow-report = "aegotrax.shadow_report:main"
+aegotrax-init = "aegotrax.init_cli:main"
 
 [project.urls]
 Homepage = "https://aegotrax.com"

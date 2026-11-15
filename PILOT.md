@@ -19,7 +19,7 @@ This document is for teams running a **limited production pilot**.
 Your Agent  ──►  Aegotrax SDK (or MCP Gateway)
                       │
                       ▼
-              Risk Engine (:8000)
+              Risk Engine (:8100)
                       │
          ┌────────────┼────────────┬─────────────────┐
          ▼            ▼            ▼                 ▼
@@ -42,12 +42,12 @@ cd aegotrax                # repo root (contains docker-compose.yml)
 docker compose up --build
 ```
 
-Leave this terminal open. The engine listens on **http://127.0.0.1:8000**.
+Leave this terminal open. The engine listens on **http://127.0.0.1:8100**.
 
 Verify:
 
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8100/health
 ```
 
 Expected: `{"status":"ok",...}`
@@ -105,7 +105,7 @@ python -m aegotrax.risk_engine
 Verify:
 
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8100/health
 ```
 
 ---
@@ -157,7 +157,7 @@ Minimum changes for pilot:
 Reload without restart:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/policy/reload \
+curl -X POST http://127.0.0.1:8100/policy/reload \
   -H "X-API-Key: $AEGOTRAX_API_KEY"
 ```
 

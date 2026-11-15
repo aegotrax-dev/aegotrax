@@ -2,7 +2,7 @@
 Direct test of Aegotrax blocking — no LLM.
 Forces: list_users → http_post (exfiltration pattern)
 
-Prerequisite: aegotrax-engine must be running on port 8000.
+Prerequisite: aegotrax-engine must be running on port 8100.
 """
 
 import asyncio
@@ -47,7 +47,7 @@ async def main():
                 print("✅ SUCCESS: Aegotrax blocked the exfiltration attempt!")
             else:
                 print("❌ FAIL: Request was not blocked.")
-                print("   Make sure aegotrax-engine is running on port 8000.")
+                print("   Make sure aegotrax-engine is running on port 8100.")
 
 
 if __name__ == "__main__":

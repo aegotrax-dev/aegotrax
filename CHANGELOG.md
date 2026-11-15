@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.9] - 2026-11-15
+
+### Added
+- **`aegotrax-init`** (`aegotrax/init_cli.py`, also `python -m aegotrax.init_cli`): writes `.env` with two different random secrets (`AEGOTRAX_API_KEY`, `AEGOTRAX_APPROVER_KEY`) and a starter `aegotrax_policy.yaml` wired in through `AEGOTRAX_POLICY_PATH`, then prints the next steps. An existing `.env` is kept: only missing or empty `AEGOTRAX_*` values are filled in. Warns when the two keys are equal (the engine would refuse to start) and when `.gitignore` does not list `.env`. `--dir`, `--no-policy`.
+- `tests/test_init_cli.py`.
+
+### Changed
+- **Breaking: default port 8000 → 8100.** 8000 is the default of most FastAPI apps and agent servers, so running Aegotrax next to an agent collided on first try. Engine (`AEGOTRAX_PORT`), SDK/gateway defaults (`AEGOTRAX_ENGINE_URL`, `AEGOTRAX_ENGINE_BASE`), Dockerfile, `docker-compose.yml`, benchmark runner, examples and docs moved together. Anyone who set these variables explicitly is unaffected; to keep 8000 set `AEGOTRAX_PORT=8000` and point `AEGOTRAX_ENGINE_URL` / `AEGOTRAX_ENGINE_BASE` at it.
+- README: Quick start is now `pip install` → `aegotrax-init` → `aegotrax-engine` plus a `@protected_tool` snippet, at the top of the page, with the Windows "not recognized" fix (`python -m aegotrax.risk_engine`) next to it. The clone/venv/tests path moved to "From source / Docker".
+- `.gitignore`: `aegotrax_policy.yaml`.
+
+### Fixed
+- **`.env` in your project was ignored when Aegotrax was pip-installed.** `load_dotenv()` searched from the package's own folder (site-packages); it now searches from the working folder (`find_dotenv(usecwd=True)`). Run the engine / your agent from the folder that holds `.env` (or a subfolder of it).
+
 ## [0.2.8] - 2026-11-11
 
 ### Security
