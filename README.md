@@ -9,7 +9,7 @@ This repo is the open **pilot runtime**. Package name: `aegotrax`.
 
 ---
 
-# 🛡️ Aegotrax v0.2.8
+# 🛡️ Aegotrax v0.2.9
 
 Intercept tool calls, evaluate **server-side session intent + scope**, apply **read budgets**, **sensitivity ceiling**, **tool risk classes**, and **block / require human approval** before sensitive actions run.
 
@@ -17,6 +17,39 @@ Intercept tool calls, evaluate **server-side session intent + scope**, apply **r
 |-------------|----------|
 | **Python SDK** | You call tools from your own code (`verify_tool_call` / `@protected_tool`) |
 | **MCP Gateway** | The agent already speaks MCP and you want one interception point |
+
+## Quick start (2 minutes)
+
+```bash
+pip install git+https://github.com/aegotrax-dev/aegotrax.git
+aegotrax-init      # writes .env (two random keys) + aegotrax_policy.yaml in this folder
+aegotrax-engine    # keep it running → http://127.0.0.1:8100/health
+```
+
+> **Windows: "'aegotrax-engine' is not recognized"?** pip put the commands in a folder that is not on your PATH (it prints a warning with that folder). Either add that folder to PATH, or use the same commands through Python:
+> `python -m aegotrax.init_cli` and `python -m aegotrax.risk_engine`
+
+Then protect a tool in your agent:
+
+```python
+from aegotrax import protected_tool
+
+@protected_tool(
+    session_id_fn=lambda: "my-session",
+    agent_id_fn=lambda: "my-agent",
+    user_intent_fn=lambda: "Summarize the customer ticket",
+)
+def send_email(to: str, body: str):
+    ...  # runs only if Aegotrax answers ALLOW; BLOCK / REQUIRE_APPROVAL raise AegotraxError
+```
+
+Your agent needs only `AEGOTRAX_API_KEY` (read from `.env` in the folder it runs in). `AEGOTRAX_APPROVER_KEY` is for the humans who approve `REQUIRE_APPROVAL` calls. The engine listens on port **8100** (set `AEGOTRAX_PORT` to change it). Already speak MCP? Put [`aegotrax-gateway`](#core-controls) in front of your tools instead.
+
+### What’s new in 0.2.9
+- **`aegotrax-init`**: one command creates `.env` with two different random keys and a starter `aegotrax_policy.yaml`. It never overwrites values you already set.
+- **Default port is now 8100** (was 8000, which most FastAPI apps and agent servers already use). Engine, SDK, gateway, Docker and examples all moved together. To keep 8000: `AEGOTRAX_PORT=8000` and `AEGOTRAX_ENGINE_URL=http://127.0.0.1:8000/verify-multi-agent`.
+- **`.env` is read from the folder you run in.** Before, a pip-installed package looked for `.env` next to its own files in site-packages and silently ignored your project's `.env`.
+- Quick start rewritten around the three commands above, with the Windows PATH fix up front.
 
 ### What’s new in 0.2.8
 - **Agents can no longer approve their own requests.** The engine never gives the agent an approval secret (only an `approval_id`). `POST /approval/decide` needs a separate **approver credential** (`X-Approver-Key`, set with `AEGOTRAX_APPROVER_KEY` / `AEGOTRAX_APPROVER_KEYS`), and `decided_by` is the authenticated approver, not a client-supplied string. **Breaking:** old clients that sent `token` / `decided_by` to `/approval/decide` now get 401 until they use the approver key; `approval_token` is gone from responses, and resume is `approval_id` alone.
@@ -45,7 +78,9 @@ Intercept tool calls, evaluate **server-side session intent + scope**, apply **r
 
 ---
 
-## Quick start
+## From source / Docker
+
+For development, tests and the demos in `examples/`:
 
 ```bash
 git clone https://github.com/aegotrax-dev/aegotrax.git
@@ -53,29 +88,23 @@ cd aegotrax
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 source .venv/bin/activate
-pip install .                       # for development and tests: pip install -e ".[test]" && python -m pytest
-
-# The engine refuses to start without a key (secure by default). Generate one:
-export AEGOTRAX_API_KEY="your-strong-api-key-here"
-# Humans who approve REQUIRE_APPROVAL calls use a DIFFERENT secret (optional; without it
-# approvals stay blocked). It must not equal AEGOTRAX_API_KEY:
-export AEGOTRAX_APPROVER_KEY="another-strong-secret"
-# Windows (PowerShell): $env:AEGOTRAX_API_KEY = "..."; $env:AEGOTRAX_APPROVER_KEY = "..."
-# Windows (cmd): set "AEGOTRAX_API_KEY=..."   (quotes avoid a trailing space becoming part of the key)
-# Or copy .env.example to .env (git-ignored) and fill it in: every process reads it.
+pip install -e ".[test]"
+python -m pytest                    # or: python -m unittest discover -s tests -t .
+aegotrax-init                       # .env (git-ignored) + aegotrax_policy.yaml
 aegotrax-engine
-# If the aegotrax-engine command is not on PATH (Windows): python -c "from aegotrax.risk_engine import main; main()"
 # other terminal:
-curl -s http://127.0.0.1:8000/health   # → version 0.2.8
+curl -s http://127.0.0.1:8100/health   # → version 0.2.9
 python examples/sdk_pilot_example.py
 ```
+
+Setting the keys by hand instead of `aegotrax-init`: the engine refuses to start without `AEGOTRAX_API_KEY`, and `AEGOTRAX_APPROVER_KEY` must be a different secret (`python -c "import secrets; print(secrets.token_urlsafe(32))"`). In cmd use `set "AEGOTRAX_API_KEY=..."` (the quotes stop a trailing space from becoming part of the key); in PowerShell `$env:AEGOTRAX_API_KEY = "..."`. You can also copy `.env.example` to `.env`.
 
 Docker:
 
 ```bash
 export AEGOTRAX_API_KEY="your-strong-api-key-here"
 export AEGOTRAX_APPROVER_KEY="another-strong-secret"   # optional
-docker compose up --build        # compose fails fast if AEGOTRAX_API_KEY is missing
+docker compose up --build        # fails fast if AEGOTRAX_API_KEY is missing; serves 127.0.0.1:8100
 ```
 
 ---
@@ -217,7 +246,7 @@ Read these honestly: the benign set is full of edge cases on purpose, so it is n
 This is a **local pilot / sandbox** runtime — not a production enterprise control plane.
 
 1. Set a strong `AEGOTRAX_API_KEY`. The engine refuses to start without one; do not disable `AEGOTRAX_REQUIRE_API_KEY` on any shared host.
-2. Do not expose port 8000 to the internet without auth + network ACL.
+2. Do not expose port 8100 to the internet without auth + network ACL.
 3. Default MCP gateway mode is `simulate`.
 4. Never commit audit logs.
 5. Approval queue and sessions are **in-memory** (cleared on restart).

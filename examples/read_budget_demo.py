@@ -1,6 +1,6 @@
 """Demo: cumulative read budgets on sensitive tools — 0.2.6.
 
-Requires engine on 127.0.0.1:8000.
+Requires engine on 127.0.0.1:8100.
 
     set AEGOTRAX_API_KEY=<your-api-key>
     aegotrax-engine

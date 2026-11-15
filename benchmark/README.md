@@ -9,7 +9,7 @@ python benchmark/run_benchmark.py --in-process
 # Against a running engine (measures HTTP round-trip latency too)
 export AEGOTRAX_API_KEY=...        # the key the engine was started with
 aegotrax-engine                    # other terminal
-python benchmark/run_benchmark.py --url http://127.0.0.1:8000
+python benchmark/run_benchmark.py --url http://127.0.0.1:8100
 
 # One category only
 python benchmark/run_benchmark.py --in-process --category ssrf

@@ -29,7 +29,7 @@ API_KEY = os.environ.get("AEGOTRAX_API_KEY") or ""
 APPROVER_KEY = os.environ.get("AEGOTRAX_APPROVER_KEY") or ""
 if not API_KEY or not APPROVER_KEY:
     raise SystemExit("Set AEGOTRAX_API_KEY and AEGOTRAX_APPROVER_KEY (two different values)")
-BASE = os.environ.get("AEGOTRAX_ENGINE_BASE", "http://127.0.0.1:8000")
+BASE = os.environ.get("AEGOTRAX_ENGINE_BASE", "http://127.0.0.1:8100")
 
 SESSION = "sess-approval"
 CALL = dict(

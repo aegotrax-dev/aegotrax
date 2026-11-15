@@ -35,7 +35,7 @@ cp .env.example .env   # if you prefer a file
 aegotrax-engine
 ```
 
-You should see Uvicorn running on `http://127.0.0.1:8000`.
+You should see Uvicorn running on `http://127.0.0.1:8100`.
 
 ### Terminal 2 — Run a demo
 
@@ -86,7 +86,7 @@ python benchmark/run_benchmark.py
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `AEGOTRAX_MODE` | `simulate` | `simulate` / `echo` / `forward` |
-| `AEGOTRAX_ENGINE_URL` | `http://127.0.0.1:8000/verify-multi-agent` | Risk engine endpoint |
+| `AEGOTRAX_ENGINE_URL` | `http://127.0.0.1:8100/verify-multi-agent` | Risk engine endpoint |
 | `AEGOTRAX_POLICY_PATH` | — | Custom `policy.yaml` |
 | `OPENAI_API_KEY` | — | Required for LangGraph demo |
 

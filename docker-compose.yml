@@ -4,11 +4,11 @@ services:
     container_name: aegotrax-engine
     ports:
       # Local sandbox only — do not publish to the internet
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8100:8100"
     environment:
       # Listen inside the container; host access is localhost-only via ports above
       AEGOTRAX_HOST: "0.0.0.0"
-      AEGOTRAX_PORT: "8000"
+      AEGOTRAX_PORT: "8100"
       AEGOTRAX_AUDIT_LOG: "/data/aegotrax_audit.log"
       AEGOTRAX_POLICY_PATH: "/data/policy.yaml"
       # Required (secure by default). Export it in your shell or put it in an untracked .env.

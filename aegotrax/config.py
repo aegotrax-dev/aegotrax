@@ -6,9 +6,19 @@ import logging
 import os
 from typing import Dict, Optional
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
-load_dotenv()
+
+def _dotenv_path() -> str:
+    """The .env to read: the one in the folder you run from (or a parent of it).
+
+    Plain load_dotenv() searches from this file's folder, which for a pip-installed
+    package is site-packages, so a project's .env was silently ignored (0.2.9).
+    """
+    return find_dotenv(usecwd=True)
+
+
+load_dotenv(_dotenv_path())
 
 logger = logging.getLogger("aegotrax.config")
 
@@ -66,7 +76,7 @@ class Settings:
 
     # Engine bind
     host: str = _env("AEGOTRAX_HOST", "127.0.0.1") or "127.0.0.1"
-    port: int = int(_env("AEGOTRAX_PORT", "8000") or "8000")
+    port: int = int(_env("AEGOTRAX_PORT", "8100") or "8100")
 
     # Auth between clients (gateway/SDK) and engine
     # Secure by default: the engine refuses to start without AEGOTRAX_API_KEY.
@@ -87,11 +97,11 @@ class Settings:
 
     # URLs
     engine_url: str = _env(
-        "AEGOTRAX_ENGINE_URL", "http://127.0.0.1:8000/verify-multi-agent"
-    ) or "http://127.0.0.1:8000/verify-multi-agent"
+        "AEGOTRAX_ENGINE_URL", "http://127.0.0.1:8100/verify-multi-agent"
+    ) or "http://127.0.0.1:8100/verify-multi-agent"
     engine_base: str = _env(
-        "AEGOTRAX_ENGINE_BASE", "http://127.0.0.1:8000"
-    ) or "http://127.0.0.1:8000"
+        "AEGOTRAX_ENGINE_BASE", "http://127.0.0.1:8100"
+    ) or "http://127.0.0.1:8100"
 
     # Gateway behaviour
     mode: str = _env("AEGOTRAX_MODE", "simulate") or "simulate"  # simulate|echo|forward
