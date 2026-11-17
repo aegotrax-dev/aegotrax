@@ -5,12 +5,31 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+# Needs push access, but only to the traffic-stats branch (main stays clean).
+permissions:
+  contents: write
+
 jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Switch to the traffic-stats branch
+        run: |
+          # Keep any data already on main for the first migration
+          mkdir -p "$RUNNER_TEMP/td"
+          cp -r traffic-data/. "$RUNNER_TEMP/td/" 2>/dev/null || true
+          if git ls-remote --exit-code --heads origin traffic-stats >/dev/null; then
+            git fetch origin traffic-stats
+            git checkout -B traffic-stats origin/traffic-stats
+          else
+            git checkout --orphan traffic-stats
+            git rm -rfq .
+          fi
+          mkdir -p traffic-data
+          cp -rn "$RUNNER_TEMP/td/." traffic-data/ 2>/dev/null || true
 
       - name: Fetch traffic data
         env:
@@ -19,22 +38,22 @@ jobs:
           mkdir -p traffic-data
           DATE=$(date +%Y-%m-%d)
           
-          curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          curl -fsS -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/traffic/clones \
             > traffic-data/clones-$DATE.json
           
-          curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          curl -fsS -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/traffic/views \
             > traffic-data/views-$DATE.json
           
-          curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          curl -fsS -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/traffic/popular/referrers \
             > traffic-data/referrers-$DATE.json
           
-          curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          curl -fsS -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/traffic/popular/paths \
             > traffic-data/paths-$DATE.json
@@ -42,48 +61,47 @@ jobs:
       - name: Update lifetime summary
         run: |
           python3 << 'PY'
-          import json, glob, os
-          from datetime import datetime
-          
-          total_clones = 0
-          total_unique_clones = 0
-          total_views = 0
-          total_unique_views = 0
-          
-          for f in glob.glob("traffic-data/clones-*.json"):
-              try:
-                  with open(f) as fp:
-                      data = json.load(fp)
-                      total_clones += data.get("count", 0)
-                      total_unique_clones += data.get("uniques", 0)
-              except: pass
-          
-          for f in glob.glob("traffic-data/views-*.json"):
-              try:
-                  with open(f) as fp:
-                      data = json.load(fp)
-                      total_views += data.get("count", 0)
-                      total_unique_views += data.get("uniques", 0)
-              except: pass
-          
+          import json, glob
+          from datetime import datetime, timezone
+
+          # Each daily file holds a rolling 14-day window, so merge the per-day
+          # entries by timestamp: every day is counted exactly once.
+          def merge(pattern, key):
+              days = {}
+              for f in sorted(glob.glob(pattern)):
+                  try:
+                      with open(f) as fp:
+                          data = json.load(fp)
+                  except Exception:
+                      continue
+                  for e in data.get(key, []):
+                      days[e["timestamp"]] = e  # newer file wins
+              return (sum(e.get("count", 0) for e in days.values()),
+                      sum(e.get("uniques", 0) for e in days.values()),
+                      len(days))
+
+          clones, u_clones, n_clones = merge("traffic-data/clones-*.json", "clones")
+          views, u_views, n_views = merge("traffic-data/views-*.json", "views")
+
           summary = {
-              "last_updated": datetime.utcnow().isoformat() + "Z",
-              "total_clones": total_clones,
-              "total_unique_clones": total_unique_clones,
-              "total_views": total_views,
-              "total_unique_views": total_unique_views,
-              "note": "Sum of all daily backups. Unique counts may overcount across days."
+              "last_updated": datetime.now(timezone.utc).isoformat(),
+              "days_covered_clones": n_clones,
+              "days_covered_views": n_views,
+              "total_clones": clones,
+              "total_views": views,
+              "sum_of_daily_unique_clones": u_clones,
+              "sum_of_daily_unique_views": u_views,
+              "note": "Each day counted once. Unique numbers are summed per day, so the same visitor on different days is counted again."
           }
-          
           with open("traffic-data/lifetime.json", "w") as fp:
               json.dump(summary, fp, indent=2)
-          print("Lifetime summary updated")
+          print("Lifetime summary updated:", summary)
           PY
 
       - name: Commit traffic data
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add traffic-data/
+          git add -f traffic-data/
           git diff --staged --quiet || git commit -m "chore: backup traffic data $(date +%Y-%m-%d)"
-          git push
+          git push origin traffic-stats

@@ -1,6 +1,6 @@
 {
   "name": "aegotrax",
-  "version": "0.2.7",
+  "version": "0.2.9",
   "description": "Runtime protection for AI agents \u2014 session envelope, budgets, sensitivity ceiling, tool risk classes, approval delivery tracking.",
   "author": {
     "name": "aegotrax-dev",
