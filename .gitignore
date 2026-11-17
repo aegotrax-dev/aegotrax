@@ -10,3 +10,4 @@ dist/
 build/
 .env
 aegotrax_policy.yaml
+traffic-data/

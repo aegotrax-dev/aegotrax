@@ -61,3 +61,12 @@
 
 ## [0.2.6] - previous
 - Session exhaust, sensitivity ceiling, tool classes, approval delivery tracking.
+
+## [0.2.5 / 0.2.4]
+
+### Added
+- Scoped session intent (`allowed_tools` / `denied_tools` on `/session`)
+- Cumulative read budgets on `sensitive_tools`
+- Human-approval token queue (single-use resume)
+- Server-side intent only (client cannot spoof `user_intent` on verify)
+- Hostname allowlists, SSRF/IMDS guards, MCP schema pinning + drift detection
