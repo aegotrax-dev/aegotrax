@@ -8,10 +8,7 @@
 
 ## Reporting a vulnerability
 
-If you discover a security vulnerability in Aegotrax, please report it by:
-
-1. Opening a **private** GitHub Security Advisory on [aegotrax-dev/aegotrax](https://github.com/aegotrax-dev/aegotrax), or
-2. Emailing **security@aegotrax.com**
+If you discover a security vulnerability in Aegotrax, please report it privately through GitHub: open the **Security** tab of [aegotrax-dev/aegotrax](https://github.com/aegotrax-dev/aegotrax/security/advisories/new) and choose **Report a vulnerability**.
 
 Please include steps to reproduce and impact. Do not open a public issue for security-sensitive reports.
 
