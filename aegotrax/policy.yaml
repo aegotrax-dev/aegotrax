@@ -87,6 +87,7 @@ dangerous_script_keywords:
   - "format c:"
   - "mkfs"
   - "dd if="
+  - "dd of=/dev/"
 
 sensitive_payload_keywords:
   read_db:
