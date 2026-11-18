@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import ipaddress
 import re
+import shlex
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
@@ -256,13 +257,70 @@ def tool_has_side_effects(tool: str, extra: Optional[Iterable[str]] = None) -> b
 _SHORT_KEYWORD_MAX_LEN = 3
 
 
+_SEGMENT_SPLIT_RE = re.compile(r"[;&|\n]+")
+
+
+def _command_segments(text: str) -> List[List[str]]:
+    """Split a shell-like string into commands, each a list of lowercase tokens.
+
+    Separators (; & | newline) end a command. Quoted strings ("dd of=x") are flattened so
+    `bash -c "dd of=/dev/sda"` is seen as the tokens dd, of=/dev/sda.
+    """
+    out: List[List[str]] = []
+    for seg in _SEGMENT_SPLIT_RE.split(text or ""):
+        seg = seg.strip()
+        if not seg:
+            continue
+        try:
+            raw = shlex.split(seg, posix=True)
+        except ValueError:  # unbalanced quote: fall back to plain whitespace split
+            raw = seg.split()
+        tokens: List[str] = []
+        for t in raw:
+            tokens.extend(t.lower().split())
+        if tokens:
+            out.append(tokens)
+    return out
+
+
+def _command_name(token: str) -> str:
+    name = token.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    return name[:-4] if name.endswith(".exe") else name
+
+
+def _command_args_match(text: str, kw: str) -> bool:
+    """Multi-word keyword as 'command + arguments', in any argument order.
+
+    "dd if=" matches `dd of=/dev/sda if=/dev/zero`, `sudo dd  bs=1M if=x`, `/bin/dd if=x`:
+    some token is the command `dd`, and every other keyword word is a prefix of one of the
+    tokens after it, within the same command (before ; & | or a newline).
+    """
+    words = kw.split()
+    cmd, rest = words[0], words[1:]
+    for tokens in _command_segments(text):
+        for i, tok in enumerate(tokens):
+            if _command_name(tok) != cmd:
+                continue
+            args = tokens[i + 1:]
+            if all(any(a.startswith(w) for a in args) for w in rest):
+                return True
+    return False
+
+
 def contains_keyword(text: str, keyword: str) -> bool:
     """Match a policy keyword against already-lowercased text."""
-    kw = (keyword or "").strip().lower()
+    kw = " ".join((keyword or "").strip().lower().split())
     if not kw:
         return False
     if len(kw) > _SHORT_KEYWORD_MAX_LEN:
-        return kw in text
+        if " " not in kw:
+            return kw in text
+        # Multi-word keyword: tolerate extra whitespace (and require a word start, so
+        # "dd if=" does not fire inside "odd if="), then argument order.
+        norm = " ".join(text.split())
+        if re.search(r"(?<![a-z0-9])" + re.escape(kw), norm):
+            return True
+        return _command_args_match(text, kw)
     return re.search(r"(?<![a-z0-9])" + re.escape(kw) + r"(?![a-z0-9])", text) is not None
 
 
