@@ -1,0 +1,62 @@
+[
+  {
+    "path": "/aegotrax-dev/aegotrax",
+    "title": "Overview",
+    "count": 19,
+    "uniques": 11
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/pulls",
+    "title": "/pulls",
+    "count": 5,
+    "uniques": 2
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/actions",
+    "title": "/actions",
+    "count": 3,
+    "uniques": 1
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/actions/workflows/traffic-backup_AX.yml",
+    "title": "/actions/workflows/traffic-backup_AX.yml",
+    "count": 3,
+    "uniques": 1
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/actions/runs/42620515326",
+    "title": "/actions/runs/42620515326",
+    "count": 2,
+    "uniques": 2
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/actions/runs/42620515326/job/129171126719",
+    "title": "/actions/runs/42620515326/job/129171126719",
+    "count": 2,
+    "uniques": 2
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/blob/main/aegotrax/policy.yaml",
+    "title": "/blob/main/aegotrax/policy.yaml",
+    "count": 2,
+    "uniques": 1
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/pull/5",
+    "title": "/pull/5",
+    "count": 2,
+    "uniques": 1
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/pull/8",
+    "title": "/pull/8",
+    "count": 2,
+    "uniques": 1
+  },
+  {
+    "path": "/aegotrax-dev/aegotrax/actions/runs/44165859122",
+    "title": "/actions/runs/44165859122",
+    "count": 1,
+    "uniques": 1
+  }
+]

@@ -1,10 +1,10 @@
 {
-  "last_updated": "2026-11-21T04:59:25.895265+00:00",
-  "days_covered_clones": 24,
-  "days_covered_views": 24,
-  "total_clones": 671,
+  "last_updated": "2026-11-22T04:23:44.842320+00:00",
+  "days_covered_clones": 25,
+  "days_covered_views": 25,
+  "total_clones": 673,
   "total_views": 75,
-  "sum_of_daily_unique_clones": 215,
+  "sum_of_daily_unique_clones": 217,
   "sum_of_daily_unique_views": 28,
   "note": "Each day counted once. Unique numbers are summed per day, so the same visitor on different days is counted again."
 }
